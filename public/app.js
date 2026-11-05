@@ -21,8 +21,9 @@ function toast(msg, err) {
   el.className = 't' + (err ? ' err' : ''); el.textContent = msg;
   $('#toast').appendChild(el); setTimeout(() => el.remove(), 3200);
 }
-async function api(url, { method = 'GET', json, raw } = {}) {
+async function api(url, { method = 'GET', json, raw, adminPassword } = {}) {
   const headers = { 'X-Actor': encodeURIComponent(S.actor) };
+  if (adminPassword) headers['X-Tooling-Password'] = adminPassword;
   let body;
   if (json !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(json); }
   if (raw) { headers['Content-Type'] = 'application/octet-stream'; body = raw; }
@@ -62,22 +63,36 @@ function render() {
   $('#main').innerHTML = v();
 }
 
-const BAR_COLORS = ['#4f46e5', '#0891b2', '#16a34a', '#d97706', '#db2777', '#7c3aed', '#2563eb', '#ea580c'];
-const bars = (items, max) => items.map((i, index) => {
-  const width = max ? Math.max(3, (i.val / max) * 100) : 0;
-  return `<div class="bar"><span>${esc(i.name)}</span><div class="t"><i style="width:${width}%;--bar-color:${BAR_COLORS[index % BAR_COLORS.length]}"></i></div><em>${i.val} set</em></div>`;
-}).join('') || '<div class="empty">Belum ada data</div>';
+let adminPasswordResolve = null;
+let adminPasswordPromise = null;
+function askToolingPassword() {
+  if (adminPasswordPromise) return adminPasswordPromise;
+  adminPasswordPromise = new Promise((resolve) => {
+    adminPasswordResolve = resolve;
+    modal(`<h3>Konfirmasi penambahan tooling</h3><p class="sub">Masukkan password admin untuk melanjutkan.</p>
+      <label>Password admin<input id="admin-pw" type="password" autocomplete="current-password"></label>
+      <div class="actions"><button class="btn" data-act="cancelAdminPassword">Batal</button><button class="btn primary" data-act="confirmAdminPassword">Lanjutkan</button></div>`);
+    $('#admin-pw').focus();
+  });
+  return adminPasswordPromise;
+}
+function finishAdminPassword(password) {
+  if (!adminPasswordResolve) return;
+  const resolve = adminPasswordResolve;
+  adminPasswordResolve = null;
+  adminPasswordPromise = null;
+  closeModal();
+  resolve(password);
+}
 
 function vDashboard() {
   const d = S.d, act_ = active(d.stock), total = sum(act_);
-  const bySt = d.statuses.map((s) => ({ ...s, n: sum(d.stock.filter((x) => x.status === s.key)) }));
   const attention = d.stock.filter((x) => ['MAINTENANCE', 'INCOMPLETE', 'RUSAK'].includes(x.status));
   const reqSets = sum(d.openReq);
+  const summaryCards = (items) => items.map((i) => `<div class="summary-card"><b>${esc(i.name)}</b><strong>${i.val}</strong><small>set aktif</small></div>`).join('') || '<div class="empty">Belum ada data</div>';
   const byLoc = d.locations.map((l) => ({ name: l.name, val: sum(act_.filter((x) => x.location_id === l.id)) }));
-  const byType = d.types.map((t) => ({ name: t.name, val: sum(act_.filter((x) => x.type_id === t.id)) })).filter((x) => x.val);
-  const top = d.styles.map((s) => ({ name: s.name, val: sum(act_.filter((x) => x.style_id === s.id)) })).filter((x) => x.val).sort((a, b) => b.val - a.val).slice(0, 8);
-  let acc = 0; const totalAll = sum(bySt, (x) => x.n) || 1;
-  const grad = bySt.filter((s) => s.n).map((s) => { const a = acc; acc += (s.n / totalAll) * 100; return `${s.color} ${a}% ${acc}%`; }).join(',') || '#e5e9f2 0 100%';
+  const byType = d.types.map((t) => ({ name: t.name, val: sum(act_.filter((x) => x.type_id === t.id)) }));
+  const byStyle = d.styles.map((s) => ({ name: s.name, val: sum(act_.filter((x) => x.style_id === s.id)) }));
   if (!d.stock.length && !d.requests.length) {
     return `<div class="head"><div><h1>Selamat datang 👋</h1><p>Data tooling masih kosong. Mulai dengan mengunggah file Excel yang dipakai sekarang.</p></div></div>
       <div class="card" style="text-align:center;padding:50px"><div style="font-size:44px">📦</div><h3 style="justify-content:center">Belum ada data tooling</h3>
@@ -93,13 +108,9 @@ function vDashboard() {
     <div class="card kpi"><div class="ic" style="background:#fef3c7">🛠️</div><div><b>${sum(attention)}</b><span>Perlu perhatian</span><small>maintenance / kurang komponen / rusak</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#e0f2fe">🚚</div><div><b>${reqSets}</b><span>Sedang on request (set)</span><small>${d.openReq.length} permintaan berjalan</small></div></div>
   </div>
-  <div class="grid g2">
-    <div class="card"><h3>Sebaran per Gedung</h3><p class="chart-note">Jumlah set aktif di setiap gedung.</p>${bars(byLoc, Math.max(...byLoc.map((x) => x.val), 0))}</div>
-    <div class="card"><h3>Status Tooling</h3><p class="chart-note">Jumlah set menurut status, termasuk yang rusak.</p><div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad})" data-c="${sum(bySt, (x) => x.n)}"></div>
-      <div class="legend">${bySt.map((s) => `<div><i style="background:${s.color}"></i>${s.label}<em>${s.n}</em></div>`).join('')}</div></div></div>
-    <div class="card"><h3>Per Jenis Tooling</h3><p class="chart-note">Jumlah set aktif untuk setiap jenis tooling.</p>${bars(byType, Math.max(...byType.map((x) => x.val), 0))}</div>
-    <div class="card"><h3>Style dengan Tooling Terbanyak</h3><p class="chart-note">8 style dengan jumlah set aktif terbanyak.</p>${bars(top, top[0]?.val || 0)}</div>
-  </div>
+  <div class="card dashboard-section"><h3>Gedung</h3><div class="summary-grid">${summaryCards(byLoc)}</div>  </div>
+  <div class="card dashboard-section"><h3>Jenis Tooling</h3><div class="summary-grid">${summaryCards(byType)}</div></div>
+  <div class="card dashboard-section"><h3>Style</h3><div class="summary-grid">${summaryCards(byStyle)}</div></div>
   <div class="grid g2">
     <div class="card"><h3>Perlu Perhatian <small>klik untuk mengelola</small></h3><div class="list">${attention.length ? attention.slice(0, 8).map((x) => {
       const st = d.stBy[x.status]; return `<div class="item click" data-act="cell" data-s="${x.style_id}" data-t="${x.type_id}" data-l="${x.location_id}">
@@ -269,10 +280,15 @@ async function saveStock() {
   if (!name) return toast('Style wajib diisi', true);
   const t = +$('#m-type').value, l = +$('#m-loc').value;
   const rows = S.d.statuses.map((st) => ({ status: st.key, qty: +$('#q-' + st.key).value || 0, note: $('#n-' + st.key).value }));
+  const style = styleByName(name);
+  const current = style ? stockOf(style.id, t, l) : [];
+  const addsStock = rows.some((r) => r.qty > (current.find((x) => x.status === r.status)?.qty || 0));
+  const adminPassword = addsStock ? await askToolingPassword() : null;
+  if (addsStock && !adminPassword) return;
   const ok = await act(async () => {
-    let s = styleByName(name);
+    let s = style;
     if (!s) s = await api('/api/styles', { method: 'POST', json: { name } });
-    await api('/api/stock/bulk', { method: 'POST', json: { style_id: s.id, type_id: t, location_id: l, rows } });
+    await api('/api/stock/bulk', { method: 'POST', json: { style_id: s.id, type_id: t, location_id: l, rows }, adminPassword });
     return true;
   }, 'Tersimpan');
   if (ok) closeModal();
@@ -335,16 +351,41 @@ document.addEventListener('click', async (e) => {
     case 'rqTab': S.rq = D.k; render(); break;
     case 'rqs': act(() => api('/api/requests/' + D.id, { method: 'PATCH', json: { status: D.st } }), 'Status diperbarui'); break;
     case 'rqRecv': recvModal(+D.id); break;
-    case 'doRecv': { const ok = await act(() => api('/api/requests/' + D.id, { method: 'PATCH', json: { status: 'DITERIMA', target_location_id: $('#rc-loc').value } }), 'Tooling masuk stok'); if (ok) closeModal(); break; }
+    case 'doRecv': {
+      const target_location_id = $('#rc-loc').value;
+      const adminPassword = await askToolingPassword();
+      if (!adminPassword) break;
+      const ok = await act(() => api('/api/requests/' + D.id, { method: 'PATCH', json: { status: 'DITERIMA', target_location_id }, adminPassword }), 'Tooling masuk stok');
+      if (ok) closeModal();
+      break;
+    }
     case 'rqDel': if (confirm('Hapus request ini?')) act(() => api('/api/requests/' + D.id, { method: 'DELETE' }), 'Request dihapus'); break;
     case 'impCancel': S.preview = null; render(); break;
     case 'impGo': {
       const p = S.preview;
-      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace: $('#replace').checked } }), `Import selesai: ${p.summary.totalSet} set`);
+      const replace = $('#replace').checked;
+      const adminPassword = await askToolingPassword();
+      if (!adminPassword) break;
+      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace }, adminPassword }), `Import selesai: ${p.summary.totalSet} set`);
       if (ok) { S.preview = null; S.view = 'dashboard'; location.hash = 'dashboard'; render(); }
       break;
     }
-    case 'addMaster': { const v = $('#' + D.i).value; if (!v.trim()) return; const ok = await act(() => api('/api/' + D.k, { method: 'POST', json: { name: v } }), 'Ditambahkan'); if (ok) render(); break; }
+    case 'addMaster': {
+      const v = $('#' + D.i).value;
+      if (!v.trim()) return;
+      const adminPassword = D.k === 'types' ? await askToolingPassword() : null;
+      if (D.k === 'types' && !adminPassword) break;
+      const ok = await act(() => api('/api/' + D.k, { method: 'POST', json: { name: v }, adminPassword }), 'Ditambahkan');
+      if (ok) render();
+      break;
+    }
+    case 'cancelAdminPassword': finishAdminPassword(null); break;
+    case 'confirmAdminPassword': {
+      const password = $('#admin-pw').value;
+      if (!password) return toast('Password wajib diisi', true);
+      finishAdminPassword(password);
+      break;
+    }
     case 'delStyle': { const sel = $('#ds'); if (!sel.value) return; if (confirm(`Hapus style ${sel.options[sel.selectedIndex].text} beserta semua stok & request-nya?`)) act(() => api('/api/styles/' + sel.value, { method: 'DELETE' }), 'Style dihapus'); break; }
   }
 });
@@ -362,7 +403,18 @@ document.addEventListener('change', (e) => {
 document.addEventListener('dragover', (e) => { const dz = e.target.closest && e.target.closest('#drop'); if (dz) { e.preventDefault(); dz.classList.add('over'); } });
 document.addEventListener('dragleave', (e) => { const dz = e.target.closest && e.target.closest('#drop'); if (dz) dz.classList.remove('over'); });
 document.addEventListener('drop', (e) => { const dz = e.target.closest && e.target.closest('#drop'); if (dz) { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer.files[0]) uploadPreview(e.dataTransfer.files[0]); } });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (adminPasswordResolve) finishAdminPassword(null);
+    else closeModal();
+  }
+  if (e.key === 'Enter' && e.target.id === 'admin-pw') {
+    e.preventDefault();
+    const password = e.target.value;
+    if (!password) return toast('Password wajib diisi', true);
+    finishAdminPassword(password);
+  }
+});
 
 async function uploadPreview(file) {
   try {

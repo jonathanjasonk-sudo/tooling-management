@@ -12,6 +12,7 @@ app.use(express.json({ limit: '5mb' }));
 
 /* ---------- Login sederhana (aktif jika APP_PASSWORD diisi) ---------- */
 const PASSWORD = process.env.APP_PASSWORD || '';
+const TOOLING_ADMIN_PASSWORD = process.env.TOOLING_ADMIN_PASSWORD || '';
 const SECRET = process.env.SESSION_SECRET || crypto.createHash('sha256').update('tms:' + PASSWORD).digest('hex');
 const sign = (exp) => exp + '.' + crypto.createHmac('sha256', SECRET).update(String(exp)).digest('hex');
 const valid = (tok) => {
@@ -40,6 +41,17 @@ app.use('/api', (req, res, next) => {
 
 /* ---------- Helper ---------- */
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
+function checkToolingPassword(req) {
+  if (!TOOLING_ADMIN_PASSWORD) throw bad('Password admin belum diatur pada konfigurasi server.', 503);
+  const provided = Buffer.from(req.get('x-tooling-password') || '');
+  const expected = Buffer.from(TOOLING_ADMIN_PASSWORD);
+  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
+    throw bad('Password admin salah.', 403);
+  }
+}
+const requireToolingPassword = (req, _res, next) => {
+  try { checkToolingPassword(req); next(); } catch (e) { next(e); }
+};
 const int = (v, name) => { const n = parseInt(v, 10); if (!Number.isFinite(n)) throw bad(`${name} tidak valid`); return n; };
 const qtyOf = (v) => { const n = parseInt(v, 10); if (!Number.isFinite(n) || n < 0) throw bad('Jumlah harus angka ≥ 0'); return n; };
 const checkStatus = (s) => { if (!STATUSES.some((x) => x.key === s)) throw bad('Status tidak dikenal: ' + s); return s; };
@@ -86,16 +98,24 @@ app.post('/api/stock/bulk', async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   const actor = actorOf(req);
   await db.tx(async (q) => {
+    const currentRows = [];
     for (const r of rows) {
-      const status = checkStatus(r.status), qty = qtyOf(r.qty), note = norm(r.note) || null;
+      const status = checkStatus(r.status);
+      qtyOf(r.qty);
       const cur = await q('SELECT id,qty,note FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
-      const old = cur.rows[0]?.qty || 0;
-      if (qty === 0) { if (cur.rows[0]) await q('DELETE FROM stock WHERE id=$1', [cur.rows[0].id]); }
+      currentRows.push(cur.rows[0]);
+    }
+    if (rows.some((r, i) => qtyOf(r.qty) > (currentRows[i]?.qty || 0))) checkToolingPassword(req);
+    for (const [i, r] of rows.entries()) {
+      const status = checkStatus(r.status), qty = qtyOf(r.qty), note = norm(r.note) || null;
+      const cur = currentRows[i];
+      const old = cur?.qty || 0;
+      if (qty === 0) { if (cur) await q('DELETE FROM stock WHERE id=$1', [cur.id]); }
       else await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note) VALUES($1,$2,$3,$4,$5,$6)
                     ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, updated_at=now()`,
         [style_id, type_id, location_id, status, qty, note]);
       if (qty !== old) await log(q, { action: 'ATUR', style_id, type_id, to: location_id, qty: qty - old, toStatus: status, note, actor });
-      else if ((cur.rows[0]?.note || null) !== note && qty > 0) await log(q, { action: 'CATATAN', style_id, type_id, to: location_id, qty: 0, toStatus: status, note, actor });
+      else if ((cur?.note || null) !== note && qty > 0) await log(q, { action: 'CATATAN', style_id, type_id, to: location_id, qty: 0, toStatus: status, note, actor });
     }
   });
   res.json({ ok: true });
@@ -129,7 +149,7 @@ async function addMaster(table, name, fmt) {
 }
 const title = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
 app.post('/api/styles', async (req, res) => res.json(await addMaster('styles', req.body.name, (s) => s.toUpperCase())));
-app.post('/api/types', async (req, res) => res.json(await addMaster('tooling_types', req.body.name, title)));
+app.post('/api/types', requireToolingPassword, async (req, res) => res.json(await addMaster('tooling_types', req.body.name, title)));
 app.post('/api/locations', async (req, res) => res.json(await addMaster('locations', req.body.name, title)));
 app.delete('/api/styles/:id', async (req, res) => {
   const id = int(req.params.id, 'id');
@@ -165,6 +185,7 @@ app.patch('/api/requests/:id', async (req, res) => {
   const id = int(req.params.id, 'id');
   const status = String(req.body.status || '');
   if (!REQUEST_STATUSES.some((s) => s.key === status)) throw bad('Status request tidak dikenal');
+  if (status === 'DITERIMA') checkToolingPassword(req);
   const actor = actorOf(req);
   await db.tx(async (q) => {
     const cur = (await q('SELECT * FROM requests WHERE id=$1', [id])).rows[0];
@@ -199,6 +220,7 @@ app.post('/api/import/preview', express.raw({ type: () => true, limit: '15mb' })
 });
 
 app.post('/api/import/commit', async (req, res) => {
+  checkToolingPassword(req);
   const { styles = [], types = [], locations = [], items = [], replace = true } = req.body;
   if (!Array.isArray(items)) throw bad('Data import tidak valid');
   const actor = actorOf(req);

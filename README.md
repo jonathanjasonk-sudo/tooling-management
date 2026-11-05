@@ -35,6 +35,7 @@ git push -u origin main
    - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (reference ke service PostgreSQL; sesuaikan `Postgres` dengan nama service database Anda)
    - `APP_PASSWORD` = password pilihan Anda
    - `SESSION_SECRET` = teks acak panjang
+   - `TOOLING_ADMIN_PASSWORD` = password admin untuk menambah stok, jenis tooling, impor data, dan menerima tooling dari request
 4. Tab **Settings → Networking → Generate Domain** untuk mendapatkan alamat web.
 5. Buka alamat tersebut → login → menu **Data & Import** → unggah file Excel awal.
 
