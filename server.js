@@ -59,15 +59,16 @@ const actorOf = (req) => { try { return decodeURIComponent(req.get('x-actor') ||
 const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
 async function loadAll() {
-  const [styles, types, locations, stock, requests, movements] = await Promise.all([
+  const [styles, types, locations, stock, requests, movements, imports] = await Promise.all([
     db.q('SELECT id,name FROM styles ORDER BY sort,id'),
     db.q('SELECT id,name FROM tooling_types ORDER BY sort,id'),
     db.q('SELECT id,name FROM locations ORDER BY sort,id'),
     db.q('SELECT id,style_id,type_id,location_id,status,qty,note FROM stock'),
     db.q(`SELECT id,style_id,type_id,qty,target_location_id,requested_by,to_char(due_date,'YYYY-MM-DD') AS due_date,status,note,created_at FROM requests ORDER BY id DESC`),
     db.q('SELECT id,ts,action,style_id,type_id,from_location_id,to_location_id,qty,from_status,to_status,note,actor FROM movements ORDER BY id DESC LIMIT 300'),
+    db.q('SELECT id,ts,filename,requested_by,actor,replace_stock,item_count,total_qty,details FROM import_batches ORDER BY id DESC LIMIT 100'),
   ]);
-  return { styles: styles.rows, types: types.rows, locations: locations.rows, stock: stock.rows, requests: requests.rows, movements: movements.rows };
+  return { styles: styles.rows, types: types.rows, locations: locations.rows, stock: stock.rows, requests: requests.rows, movements: movements.rows, imports: imports.rows };
 }
 
 const log = (q, m) => q(
@@ -97,6 +98,7 @@ app.post('/api/stock/bulk', async (req, res) => {
   const style_id = int(req.body.style_id, 'style'), type_id = int(req.body.type_id, 'jenis'), location_id = int(req.body.location_id, 'gedung');
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   const actor = actorOf(req);
+  const requestedBy = norm(req.body.requested_by);
   await db.tx(async (q) => {
     const currentRows = [];
     for (const r of rows) {
@@ -105,7 +107,9 @@ app.post('/api/stock/bulk', async (req, res) => {
       const cur = await q('SELECT id,qty,note FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
       currentRows.push(cur.rows[0]);
     }
-    if (rows.some((r, i) => qtyOf(r.qty) > (currentRows[i]?.qty || 0))) checkToolingPassword(req);
+    const addsStock = rows.some((r, i) => qtyOf(r.qty) > (currentRows[i]?.qty || 0));
+    if (addsStock && !actor) throw bad('Nama PIC yang menambahkan wajib diisi.');
+    if (addsStock && !requestedBy) throw bad('Nama PIC yang meminta wajib diisi.');
     for (const [i, r] of rows.entries()) {
       const status = checkStatus(r.status), qty = qtyOf(r.qty), note = norm(r.note) || null;
       const cur = currentRows[i];
@@ -114,7 +118,7 @@ app.post('/api/stock/bulk', async (req, res) => {
       else await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note) VALUES($1,$2,$3,$4,$5,$6)
                     ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, updated_at=now()`,
         [style_id, type_id, location_id, status, qty, note]);
-      if (qty !== old) await log(q, { action: 'ATUR', style_id, type_id, to: location_id, qty: qty - old, toStatus: status, note, actor });
+      if (qty !== old) await log(q, { action: 'ATUR', style_id, type_id, to: location_id, qty: qty - old, toStatus: status, note: qty > old && requestedBy ? `Diminta oleh ${requestedBy}${note ? ` — ${note}` : ''}` : note, actor });
       else if ((cur?.note || null) !== note && qty > 0) await log(q, { action: 'CATATAN', style_id, type_id, to: location_id, qty: 0, toStatus: status, note, actor });
     }
   });
@@ -166,17 +170,20 @@ app.post('/api/requests', async (req, res) => {
   const b = req.body;
   const type_id = int(b.type_id, 'jenis tooling'), qty = int(b.qty, 'jumlah');
   if (qty < 1) throw bad('Jumlah minimal 1');
+  const actor = actorOf(req);
+  const requestedBy = norm(b.requested_by);
+  if (!actor) throw bad('Nama PIC yang mencatat request wajib diisi.');
+  if (!requestedBy) throw bad('Nama PIC yang meminta wajib diisi.');
   let style_id = b.style_id ? int(b.style_id, 'style') : null;
   if (!style_id) {
     if (!norm(b.style_name)) throw bad('Style wajib diisi');
     style_id = (await addMaster('styles', b.style_name, (s) => s.toUpperCase())).id;
   }
   const target = b.target_location_id ? int(b.target_location_id, 'gedung') : null;
-  const actor = actorOf(req);
   await db.tx(async (q) => {
     await q(`INSERT INTO requests(style_id,type_id,qty,target_location_id,requested_by,due_date,note) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-      [style_id, type_id, qty, target, norm(b.requested_by) || actor, b.due_date || null, norm(b.note) || null]);
-    await log(q, { action: 'REQUEST', style_id, type_id, to: target, qty, note: norm(b.note) || null, actor });
+      [style_id, type_id, qty, target, requestedBy, b.due_date || null, norm(b.note) || null]);
+    await log(q, { action: 'REQUEST', style_id, type_id, to: target, qty, note: `Diminta oleh ${requestedBy}${norm(b.note) ? ` — ${norm(b.note)}` : ''}`, actor });
   });
   res.json({ ok: true });
 });
@@ -185,8 +192,8 @@ app.patch('/api/requests/:id', async (req, res) => {
   const id = int(req.params.id, 'id');
   const status = String(req.body.status || '');
   if (!REQUEST_STATUSES.some((s) => s.key === status)) throw bad('Status request tidak dikenal');
-  if (status === 'DITERIMA') checkToolingPassword(req);
   const actor = actorOf(req);
+  if (status === 'DITERIMA' && !actor) throw bad('Nama PIC yang menerima dan menambahkan ke stok wajib diisi.');
   await db.tx(async (q) => {
     const cur = (await q('SELECT * FROM requests WHERE id=$1', [id])).rows[0];
     if (!cur) throw bad('Request tidak ditemukan', 404);
@@ -195,7 +202,7 @@ app.patch('/api/requests/:id', async (req, res) => {
     if (status === 'DITERIMA') {
       if (!target) throw bad('Pilih gedung tujuan dulu sebelum menerima tooling');
       await addStock(q, { style_id: cur.style_id, type_id: cur.type_id, location_id: target, status: 'TERSEDIA', delta: cur.qty });
-      await log(q, { action: 'TERIMA', style_id: cur.style_id, type_id: cur.type_id, to: target, qty: cur.qty, toStatus: 'TERSEDIA', note: 'Dari request #' + id, actor });
+      await log(q, { action: 'TERIMA', style_id: cur.style_id, type_id: cur.type_id, to: target, qty: cur.qty, toStatus: 'TERSEDIA', note: `Dari request #${id} — diminta oleh ${cur.requested_by || 'tidak dicatat'}`, actor });
     } else {
       await log(q, { action: 'REQUEST_' + status, style_id: cur.style_id, type_id: cur.type_id, to: target, qty: cur.qty, note: 'Request #' + id, actor });
     }
@@ -220,11 +227,16 @@ app.post('/api/import/preview', express.raw({ type: () => true, limit: '15mb' })
 });
 
 app.post('/api/import/commit', async (req, res) => {
-  checkToolingPassword(req);
   const { styles = [], types = [], locations = [], items = [], replace = true } = req.body;
   if (!Array.isArray(items)) throw bad('Data import tidak valid');
   const actor = actorOf(req);
+  const requestedBy = norm(req.body.requested_by);
+  const filename = norm(req.body.filename) || 'File Excel';
+  if (!actor) throw bad('Nama PIC yang mengunggah wajib diisi.');
+  if (!requestedBy) throw bad('Nama PIC yang meminta import wajib diisi.');
   await db.tx(async (q) => {
+    const existingTypes = new Set((await q('SELECT name FROM tooling_types')).rows.map((r) => r.name.toLowerCase()));
+    if (types.some((name) => !existingTypes.has(title(norm(name)).toLowerCase()))) checkToolingPassword(req);
     const ids = { styles: {}, types: {}, locations: {} };
     const up = async (table, key, names, fmt) => {
       let i = (await q(`SELECT COALESCE(MAX(sort),0) AS m FROM ${table}`)).rows[0].m;
@@ -239,6 +251,7 @@ app.post('/api/import/commit', async (req, res) => {
     await up('tooling_types', 'types', types, title);
     await up('locations', 'locations', locations, title);
     let total = 0;
+    const details = [];
     for (const it of items) {
       const status = checkStatus(it.status || 'TERSEDIA'); const qty = qtyOf(it.qty);
       if (qty < 1) continue;
@@ -248,8 +261,12 @@ app.post('/api/import/commit', async (req, res) => {
                ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, updated_at=now()`,
         [s, t, l, status, qty, norm(it.note) || null]);
       total += qty;
+      details.push({ style: it.style, type: it.type, location: it.location, status, qty, note: norm(it.note) || '' });
     }
-    await log(q, { action: 'IMPORT', qty: total, note: `Import Excel: ${items.length} baris, ${replace ? 'data lama diganti' : 'digabung'}`, actor });
+    await q(`INSERT INTO import_batches(filename,requested_by,actor,replace_stock,item_count,total_qty,details)
+      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+    [filename, requestedBy, actor, replace, details.length, total, JSON.stringify(details)]);
+    await log(q, { action: 'IMPORT', qty: total, note: `Import Excel: ${filename} · ${items.length} baris · ${replace ? 'stok lama diganti' : 'digabung'} · diminta oleh ${requestedBy}`, actor });
   });
   res.json({ ok: true });
 });

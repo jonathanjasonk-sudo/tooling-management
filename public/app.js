@@ -69,7 +69,7 @@ function askToolingPassword() {
   if (adminPasswordPromise) return adminPasswordPromise;
   adminPasswordPromise = new Promise((resolve) => {
     adminPasswordResolve = resolve;
-    modal(`<h3>Konfirmasi penambahan tooling</h3><p class="sub">Masukkan password admin untuk melanjutkan.</p>
+    modal(`<h3>Admin jenis tooling</h3><p class="sub">Masukkan password admin untuk menambah atau mengubah jenis tooling.</p>
       <label>Password admin<input id="admin-pw" type="password" autocomplete="current-password"></label>
       <div class="actions"><button class="btn" data-act="cancelAdminPassword">Batal</button><button class="btn primary" data-act="confirmAdminPassword">Lanjutkan</button></div>`);
     $('#admin-pw').focus();
@@ -232,8 +232,20 @@ function vRequest() {
 
 /* ---------- Riwayat ---------- */
 function vHistory() {
-  return `<div class="head"><div><h1>Riwayat Perubahan</h1><p>300 aktivitas terakhir — siapa memindahkan, mengubah, atau menerima tooling.</p></div></div>
-  <div class="card"><div class="list">${S.d.movements.map(mvItem).join('') || '<div class="empty">Belum ada aktivitas</div>'}</div></div>`;
+  const imports = S.d.imports || [];
+  const importItems = imports.map((batch) => {
+    const details = Array.isArray(batch.details) ? batch.details : typeof batch.details === 'string' ? JSON.parse(batch.details) : [];
+    const rows = details.map((item) => `<tr><td>${esc(item.style)}</td><td>${esc(item.type)}</td><td>${esc(item.location)}</td><td>${esc(S.d.stBy[item.status]?.label || item.status)}</td><td>${item.qty} set</td><td>${esc(item.note || '-')}</td></tr>`).join('');
+    return `<details class="history-import"><summary><span><b>Upload Excel — ${esc(batch.filename)}</b><small>${fmtDate(batch.ts)} · ${batch.item_count} baris · ${batch.total_qty} set · ${batch.replace_stock ? 'mengganti stok' : 'menggabungkan data'}</small></span><span class="history-pics">Diminta: ${esc(batch.requested_by)} · Diunggah: ${esc(batch.actor)}</span></summary>
+      <div class="mini-tbl"><table class="plain"><thead><tr><th>Style</th><th>Jenis tooling</th><th>Gedung</th><th>Status</th><th>Jumlah</th><th>Catatan</th></tr></thead><tbody>${rows || '<tr><td colspan="6">Tidak ada baris stok pada file ini.</td></tr>'}</tbody></table></div></details>`;
+  });
+  const movements = S.d.movements
+    .filter((m) => m.action !== 'IMPORT' || !imports.some((batch) => m.note?.includes(batch.filename) && Number(m.qty) === Number(batch.total_qty)))
+    .map((m) => ({ ts: m.ts, html: mvItem(m) }));
+  const batchEntries = imports.map((batch, index) => ({ ts: batch.ts, html: importItems[index] }));
+  const entries = [...movements, ...batchEntries].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  return `<div class="head"><div><h1>Riwayat Perubahan</h1><p>Aktivitas request, penambahan dan perubahan stok, serta detail file Excel yang diimpor.</p></div></div>
+  <div class="card"><div class="list">${entries.map((item) => item.html).join('') || '<div class="empty">Belum ada aktivitas</div>'}</div></div>`;
 }
 
 /* ---------- Data & Import ---------- */
@@ -248,6 +260,7 @@ function vData() {
       ${p.summary.stylesWithoutTooling.length ? `<p style="color:var(--mut)">Style tanpa tooling di Excel (tetap dibuat): ${p.summary.stylesWithoutTooling.map(esc).join(', ')}</p>` : ''}
       ${p.warnings.length ? `<b>${p.warnings.length} sel berisi catatan</b> <small style="color:var(--mut)">— catatan disimpan; yang bertanda “kurang/hanya” otomatis berstatus Kurang Komponen. Silakan cek:</small>
       <div class="mini-tbl"><table class="plain"><thead><tr><th>Style</th><th>Tooling</th><th>Gedung</th><th>Teks asli</th><th>Dibaca</th></tr></thead><tbody>${p.warnings.map((w) => `<tr><td>${esc(w.style)}</td><td>${esc(w.type)}</td><td>${esc(w.location)}</td><td>${esc(w.raw)}</td><td><b>${w.qty} set</b></td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="grid2" style="margin-top:16px"><label>PIC yang meminta import<input id="import-requested-by" placeholder="Nama PIC peminta"></label><p class="chart-note">PIC yang mengunggah: <b>${esc(S.actor || 'belum diisi')}</b> (diambil dari menu samping).</p></div>
       <div class="row" style="margin-top:16px"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="replace" checked style="width:auto;margin:0"> Ganti semua stok lama (disarankan untuk data awal)</label>
       <span class="sp" style="flex:1"></span><button class="btn" data-act="impCancel">Batal</button><button class="btn primary" data-act="impGo">Impor sekarang</button></div></div>` : ''}
    </div>
@@ -276,6 +289,8 @@ function stockModal({ sid, tid, lid, lock } = {}) {
     <label>Gedung<select id="m-loc" ${lock ? 'disabled' : ''}>${opts(d.locations, lid || d.locations[0]?.id)}</select></label>
   </div><datalist id="dl-s">${d.styles.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>
   <div id="m-rows"></div>
+  <label>PIC yang meminta penambahan<input id="m-requested-by" placeholder="Nama PIC peminta"></label>
+  <p class="chart-note">PIC yang menambahkan diambil dari nama PIC di bagian bawah menu samping.</p>
   <div class="hint">Contoh: ada 5 set di gedung ini, 2 di antaranya sedang diperbaiki → <b>Tersedia 3</b> dan <b>Maintenance 2</b>. Catatan boleh diisi (mis. “kurang size 2,3,9”).</div>
   <div class="actions">${lock ? '<button class="btn sp" data-act="moveBtn">↔ Pindahkan ke gedung lain</button>' : ''}<button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveStock">Simpan</button></div>`);
   fillRows();
@@ -296,12 +311,13 @@ async function saveStock() {
   const style = styleByName(name);
   const current = style ? stockOf(style.id, t, l) : [];
   const addsStock = rows.some((r) => r.qty > (current.find((x) => x.status === r.status)?.qty || 0));
-  const adminPassword = addsStock ? await askToolingPassword() : null;
-  if (addsStock && !adminPassword) return;
+  const requestedBy = $('#m-requested-by').value.trim();
+  if (addsStock && !S.actor.trim()) return toast('Isi dulu nama PIC yang menambahkan di bagian bawah menu samping.', true);
+  if (addsStock && !requestedBy) return toast('Nama PIC yang meminta wajib diisi.', true);
   const ok = await act(async () => {
     let s = style;
     if (!s) s = await api('/api/styles', { method: 'POST', json: { name } });
-    await api('/api/stock/bulk', { method: 'POST', json: { style_id: s.id, type_id: t, location_id: l, rows }, adminPassword });
+    await api('/api/stock/bulk', { method: 'POST', json: { style_id: s.id, type_id: t, location_id: l, rows, requested_by: requestedBy } });
     return true;
   }, 'Tersimpan');
   if (ok) closeModal();
@@ -325,7 +341,8 @@ function reqModal(pre = {}) {
   <div class="grid3"><label>Jumlah (set)<input type="number" id="r-qty" min="1" value="1"></label>
   <label>Gedung tujuan<select id="r-loc"><option value="">Belum ditentukan</option>${opts(d.locations, '')}</select></label>
   <label>Target tanggal<input type="date" id="r-due"></label></div>
-  <div class="grid2"><label>Diminta oleh<input id="r-by" value="${esc(S.actor)}" placeholder="Nama / bagian"></label><label>Catatan<input id="r-note" placeholder="opsional"></label></div>
+  <div class="grid2"><label>PIC yang meminta<input id="r-by" placeholder="Nama PIC peminta"></label><label>Catatan<input id="r-note" placeholder="opsional"></label></div>
+  <p class="chart-note">PIC yang mencatat request diambil dari nama PIC di bagian bawah menu samping.</p>
   <div class="actions"><button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveReq">Ajukan Request</button></div>`);
 }
 function recvModal(id) {
@@ -337,7 +354,11 @@ function recvModal(id) {
 
 /* ---------- Event delegasi ---------- */
 document.addEventListener('click', async (e) => {
-  if (e.target.classList && e.target.classList.contains('ov')) return closeModal();
+  if (e.target.classList && e.target.classList.contains('ov')) {
+    if (adminPasswordResolve) finishAdminPassword(null);
+    else closeModal();
+    return;
+  }
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act, D = el.dataset;
   const ids = () => ({ sid: +D.s, tid: +D.t, lid: +D.l });
@@ -356,6 +377,8 @@ document.addEventListener('click', async (e) => {
     case 'newReq': reqModal(); break;
     case 'saveReq': {
       const name = $('#r-style').value.trim().toUpperCase(); if (!name) return toast('Style wajib diisi', true);
+      if (!S.actor.trim()) return toast('Isi dulu nama PIC yang mencatat di bagian bawah menu samping.', true);
+      if (!$('#r-by').value.trim()) return toast('Nama PIC yang meminta wajib diisi.', true);
       const s = styleByName(name);
       const ok = await act(() => api('/api/requests', { method: 'POST', json: { style_id: s ? s.id : null, style_name: name, type_id: +$('#r-type').value, qty: +$('#r-qty').value, target_location_id: $('#r-loc').value || null, due_date: $('#r-due').value || null, requested_by: $('#r-by').value, note: $('#r-note').value } }), 'Request dicatat');
       if (ok) { closeModal(); }
@@ -366,9 +389,8 @@ document.addEventListener('click', async (e) => {
     case 'rqRecv': recvModal(+D.id); break;
     case 'doRecv': {
       const target_location_id = $('#rc-loc').value;
-      const adminPassword = await askToolingPassword();
-      if (!adminPassword) break;
-      const ok = await act(() => api('/api/requests/' + D.id, { method: 'PATCH', json: { status: 'DITERIMA', target_location_id }, adminPassword }), 'Tooling masuk stok');
+      if (!S.actor.trim()) return toast('Isi dulu nama PIC yang menerima di bagian bawah menu samping.', true);
+      const ok = await act(() => api('/api/requests/' + D.id, { method: 'PATCH', json: { status: 'DITERIMA', target_location_id } }), 'Tooling masuk stok');
       if (ok) closeModal();
       break;
     }
@@ -377,9 +399,13 @@ document.addEventListener('click', async (e) => {
     case 'impGo': {
       const p = S.preview;
       const replace = $('#replace').checked;
-      const adminPassword = await askToolingPassword();
-      if (!adminPassword) break;
-      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace }, adminPassword }), `Import selesai: ${p.summary.totalSet} set`);
+      const requested_by = $('#import-requested-by').value.trim();
+      if (!S.actor.trim()) return toast('Isi dulu nama PIC yang mengunggah di bagian bawah menu samping.', true);
+      if (!requested_by) return toast('Nama PIC yang meminta import wajib diisi.', true);
+      const newTypes = p.types.some((name) => !S.d.types.some((type) => type.name.toLowerCase() === name.toLowerCase()));
+      const adminPassword = newTypes ? await askToolingPassword() : null;
+      if (newTypes && !adminPassword) break;
+      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace, filename: p.filename, requested_by }, adminPassword }), `Import selesai: ${p.summary.totalSet} set`);
       if (ok) { S.preview = null; S.view = 'dashboard'; location.hash = 'dashboard'; render(); }
       break;
     }
@@ -433,6 +459,7 @@ async function uploadPreview(file) {
   try {
     toast('Membaca file…');
     S.preview = await api('/api/import/preview', { method: 'POST', raw: await file.arrayBuffer() });
+    S.preview.filename = file.name;
     render();
   } catch (e) { toast(e.message, true); }
 }

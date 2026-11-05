@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS movements (
   action TEXT NOT NULL, style_id INT, type_id INT,
   from_location_id INT, to_location_id INT, qty INT,
   from_status TEXT, to_status TEXT, note TEXT, actor TEXT);
+CREATE TABLE IF NOT EXISTS import_batches (
+  id SERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+  filename TEXT NOT NULL, requested_by TEXT NOT NULL, actor TEXT NOT NULL,
+  replace_stock BOOLEAN NOT NULL, item_count INT NOT NULL, total_qty INT NOT NULL,
+  details JSONB NOT NULL);
 `;
 
 async function q(sql, params = []) {
