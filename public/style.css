@@ -60,10 +60,11 @@ main{padding:28px 32px 60px;min-width:0}
 .kpi small{display:block;color:var(--mut);font-size:11.5px;margin-top:2px}
 
 /* bars */
-.bar{display:grid;grid-template-columns:110px 1fr 40px;gap:10px;align-items:center;margin:9px 0;font-weight:600;font-size:13px}
-.bar .t{height:11px;border-radius:99px;background:#eef1f8;overflow:hidden}
-.bar .t i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--pri),#22d3ee)}
-.bar em{font-style:normal;text-align:right}
+.bar{display:grid;grid-template-columns:110px 1fr 64px;gap:10px;align-items:center;margin:9px 0;font-weight:600;font-size:13px}
+.bar .t{height:14px;border-radius:99px;background:#e2e8f0;overflow:hidden}
+.bar .t i{display:block;height:100%;border-radius:99px;background:var(--pri)}
+.bar em{font-style:normal;text-align:right;white-space:nowrap;font-size:12px}
+.chart-note{margin:-8px 0 14px;color:var(--mut);font-size:12px}
 .donut-wrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
 .donut{width:150px;height:150px;border-radius:50%;position:relative;flex:none}
 .donut::after{content:attr(data-c);position:absolute;inset:24px;background:#fff;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:24px;text-align:center;line-height:1}
@@ -169,5 +170,5 @@ table.plain tr:hover td{background:#fafbff}
   main{padding:18px 14px 50px}
   .mdl .grid3,.mdl .grid2{grid-template-columns:1fr}
   .srow{grid-template-columns:1fr 80px}.srow input:last-child{grid-column:1/-1}
-  .bar{grid-template-columns:84px 1fr 34px}
+  .bar{grid-template-columns:84px 1fr 60px}
 }

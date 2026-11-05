@@ -62,8 +62,10 @@ function render() {
   $('#main').innerHTML = v();
 }
 
-const bars = (items, max, fmtv = (v) => v) => items.map((i) =>
-  `<div class="bar"><span>${esc(i.name)}</span><div class="t"><i style="width:${max ? Math.max(3, (i.val / max) * 100) : 0}%"></i></div><em>${fmtv(i.val)}</em></div>`).join('') || '<div class="empty">Belum ada data</div>';
+const bars = (items, max) => items.map((i) => {
+  const width = max ? Math.max(3, (i.val / max) * 100) : 0;
+  return `<div class="bar"><span>${esc(i.name)}</span><div class="t"><i style="width:${width}%"></i></div><em>${i.val} set</em></div>`;
+}).join('') || '<div class="empty">Belum ada data</div>';
 
 function vDashboard() {
   const d = S.d, act_ = active(d.stock), total = sum(act_);
@@ -82,20 +84,20 @@ function vDashboard() {
       <button class="btn primary" data-act="nav" data-v="data">Unggah file Excel</button></div>`;
   }
   return `
-  <div class="head"><div><h1>Ringkasan Tooling</h1><p>Posisi, status, dan permintaan tooling — semua di satu tempat.</p></div>
+  <div class="head"><div><h1>Ringkasan Tooling</h1><p>Semua angka stok dalam satuan set. Total aktif tidak menghitung tooling rusak; request ditampilkan terpisah.</p></div>
     <div class="row"><button class="btn" data-act="newReq">＋ On Request</button><button class="btn primary" data-act="newStock">＋ Tambah Tooling</button></div></div>
   <div class="grid kpis">
-    <div class="card kpi"><div class="ic">📦</div><div><b>${total}</b><span>Total tooling aktif (set)</span><small>${d.styles.length} style</small></div></div>
+    <div class="card kpi"><div class="ic">📦</div><div><b>${total}</b><span>Total tooling aktif</span><small>${d.styles.length} style · tidak termasuk rusak</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#dcfce7">✅</div><div><b>${sum(d.stock.filter((x) => x.status === 'TERSEDIA'))}</b><span>Tersedia</span><small>${sum(d.stock.filter((x) => x.status === 'DIPAKAI'))} sedang dipakai</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#fef3c7">🛠️</div><div><b>${sum(attention)}</b><span>Perlu perhatian</span><small>maintenance / kurang komponen / rusak</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#e0f2fe">🚚</div><div><b>${reqSets}</b><span>Sedang on request (set)</span><small>${d.openReq.length} permintaan berjalan</small></div></div>
   </div>
   <div class="grid g2">
-    <div class="card"><h3>Sebaran per Gedung <small>set aktif</small></h3>${bars(byLoc, Math.max(...byLoc.map((x) => x.val), 0))}</div>
-    <div class="card"><h3>Status Tooling</h3><div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad})" data-c="${sum(bySt, (x) => x.n)}"></div>
+    <div class="card"><h3>Sebaran per Gedung</h3><p class="chart-note">Jumlah set aktif di setiap gedung.</p>${bars(byLoc, Math.max(...byLoc.map((x) => x.val), 0))}</div>
+    <div class="card"><h3>Status Tooling</h3><p class="chart-note">Jumlah set menurut status, termasuk yang rusak.</p><div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad})" data-c="${sum(bySt, (x) => x.n)}"></div>
       <div class="legend">${bySt.map((s) => `<div><i style="background:${s.color}"></i>${s.label}<em>${s.n}</em></div>`).join('')}</div></div></div>
-    <div class="card"><h3>Per Jenis Tooling</h3>${bars(byType, Math.max(...byType.map((x) => x.val), 0))}</div>
-    <div class="card"><h3>Style dengan Tooling Terbanyak</h3>${bars(top, top[0]?.val || 0)}</div>
+    <div class="card"><h3>Per Jenis Tooling</h3><p class="chart-note">Jumlah set aktif untuk setiap jenis tooling.</p>${bars(byType, Math.max(...byType.map((x) => x.val), 0))}</div>
+    <div class="card"><h3>Style dengan Tooling Terbanyak</h3><p class="chart-note">8 style dengan jumlah set aktif terbanyak.</p>${bars(top, top[0]?.val || 0)}</div>
   </div>
   <div class="grid g2">
     <div class="card"><h3>Perlu Perhatian <small>klik untuk mengelola</small></h3><div class="list">${attention.length ? attention.slice(0, 8).map((x) => {
