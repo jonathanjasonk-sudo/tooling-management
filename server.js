@@ -52,6 +52,7 @@ function checkToolingPassword(req) {
 const requireToolingPassword = (req, _res, next) => {
   try { checkToolingPassword(req); next(); } catch (e) { next(e); }
 };
+app.post('/api/admin/verify', requireToolingPassword, (_req, res) => res.json({ ok: true }));
 const int = (v, name) => { const n = parseInt(v, 10); if (!Number.isFinite(n)) throw bad(`${name} tidak valid`); return n; };
 const qtyOf = (v) => { const n = parseInt(v, 10); if (!Number.isFinite(n) || n < 0) throw bad('Jumlah harus angka ≥ 0'); return n; };
 const checkStatus = (s) => { if (!STATUSES.some((x) => x.key === s)) throw bad('Status tidak dikenal: ' + s); return s; };
@@ -154,8 +155,27 @@ async function addMaster(table, name, fmt) {
 const title = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
 app.post('/api/styles', async (req, res) => res.json(await addMaster('styles', req.body.name, (s) => s.toUpperCase())));
 app.post('/api/types', requireToolingPassword, async (req, res) => res.json(await addMaster('tooling_types', req.body.name, title)));
-app.post('/api/locations', async (req, res) => res.json(await addMaster('locations', req.body.name, title)));
-app.delete('/api/styles/:id', async (req, res) => {
+app.post('/api/locations', requireToolingPassword, async (req, res) => res.json(await addMaster('locations', req.body.name, title)));
+app.delete('/api/types/:id', requireToolingPassword, async (req, res) => {
+  const id = int(req.params.id, 'id');
+  await db.tx(async (q) => {
+    const type = (await q('SELECT name FROM tooling_types WHERE id=$1', [id])).rows[0];
+    if (!type) throw bad('Jenis tooling tidak ditemukan.', 404);
+    const stock = await q('SELECT count(*)::int AS rows, COALESCE(sum(qty),0)::int AS sets FROM stock WHERE type_id=$1', [id]);
+    const requests = await q('SELECT count(*)::int AS rows FROM requests WHERE type_id=$1', [id]);
+    await q('DELETE FROM stock WHERE type_id=$1', [id]);
+    await q('DELETE FROM requests WHERE type_id=$1', [id]);
+    await q('DELETE FROM tooling_types WHERE id=$1', [id]);
+    await log(q, {
+      action: 'HAPUS_JENIS',
+      qty: stock.rows[0].sets,
+      note: `${type.name} — ${stock.rows[0].rows} baris stok dan ${requests.rows[0].rows} request dihapus`,
+      actor: actorOf(req),
+    });
+  });
+  res.json({ ok: true });
+});
+app.delete('/api/styles/:id', requireToolingPassword, async (req, res) => {
   const id = int(req.params.id, 'id');
   await db.tx(async (q) => {
     const s = await q('SELECT name FROM styles WHERE id=$1', [id]);
@@ -220,13 +240,13 @@ app.delete('/api/requests/:id', async (req, res) => {
 });
 
 /* ---------- Import / Export Excel ---------- */
-app.post('/api/import/preview', express.raw({ type: () => true, limit: '15mb' }), async (req, res) => {
+app.post('/api/import/preview', requireToolingPassword, express.raw({ type: () => true, limit: '15mb' }), async (req, res) => {
   if (!req.body || !req.body.length) throw bad('File tidak terbaca');
   try { res.json(await parseWorkbook(req.body)); }
   catch (e) { throw bad(e.message); }
 });
 
-app.post('/api/import/commit', async (req, res) => {
+app.post('/api/import/commit', requireToolingPassword, async (req, res) => {
   const { styles = [], types = [], locations = [], items = [], replace = true } = req.body;
   if (!Array.isArray(items)) throw bad('Data import tidak valid');
   const actor = actorOf(req);
@@ -271,7 +291,7 @@ app.post('/api/import/commit', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/export', async (_req, res) => {
+app.get('/api/export', requireToolingPassword, async (_req, res) => {
   const wb = await buildWorkbook(await loadAll());
   const stamp = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

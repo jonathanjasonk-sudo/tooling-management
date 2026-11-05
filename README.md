@@ -11,6 +11,7 @@ dan melihat total per style beserta pembagiannya per gedung — menggantikan fil
 - **On Request**: ajukan → dalam pembuatan → siap → *terima ke stok* (otomatis masuk stok). Jumlah request ikut dihitung sebagai proyeksi total style.
 - **Riwayat**: perubahan dengan nama PIC, request, penambahan stok manual, dan detail baris pada impor Excel.
 - Penambahan stok dan request mencatat PIC peminta serta PIC yang menambahkan/mencatat. Riwayat import Excel menyimpan rincian setiap baris.
+- Tab **Data & Import** dan perubahan master data memerlukan password admin. Menghapus jenis tooling akan meminta konfirmasi; stok dan request yang terkait ikut dihapus, sedangkan riwayat aktivitas tetap tersimpan.
 - **Import Excel** (data awal, dengan pratinjau) dan **Export Excel** (susunan sama seperti file asli).
 - Login password sederhana (`APP_PASSWORD`).
 
@@ -36,7 +37,7 @@ git push -u origin main
    - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (reference ke service PostgreSQL; sesuaikan `Postgres` dengan nama service database Anda)
    - `APP_PASSWORD` = password pilihan Anda
    - `SESSION_SECRET` = teks acak panjang
-   - `TOOLING_ADMIN_PASSWORD` = password admin khusus untuk menambah jenis tooling (termasuk jenis baru dari Excel). Penambahan stok, request, impor Excel tanpa jenis baru, dan penerimaan request memakai nama PIC; tidak meminta password ini.
+   - `TOOLING_ADMIN_PASSWORD` = password admin untuk membuka Data & Import dan mengelola master data. Tambah stok, request, impor, serta penerimaan request tetap memakai nama PIC; tambah stok manual tidak meminta password.
 4. Tab **Settings → Networking → Generate Domain** untuk mendapatkan alamat web.
 5. Buka alamat tersebut → login → menu **Data & Import** → unggah file Excel awal.
 

@@ -2,7 +2,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const sum = (a, f = (x) => x.qty) => a.reduce((t, x) => t + f(x), 0);
-const S = { d: null, view: 'dashboard', f: { q: '', loc: '', type: '', status: '' }, rq: 'open', actor: localStorage.getItem('actor') || '', preview: null };
+const S = { d: null, view: 'dashboard', adminPassword: null, f: { q: '', loc: '', type: '', status: '' }, rq: 'open', actor: localStorage.getItem('actor') || '', preview: null };
 const OPEN = ['DIAJUKAN', 'DIPROSES', 'SIAP'];
 const SHORT = { DIPAKAI: 'dipakai', MAINTENANCE: 'maint.', INCOMPLETE: 'kurang', RUSAK: 'rusak' };
 const RQ_LABEL = { DIAJUKAN: 'Diajukan', DIPROSES: 'Dalam pembuatan', SIAP: 'Siap diambil', DITERIMA: 'Diterima', DIBATALKAN: 'Dibatalkan' };
@@ -23,7 +23,8 @@ function toast(msg, err) {
 }
 async function api(url, { method = 'GET', json, raw, adminPassword } = {}) {
   const headers = { 'X-Actor': encodeURIComponent(S.actor) };
-  if (adminPassword) headers['X-Tooling-Password'] = adminPassword;
+  const password = adminPassword || S.adminPassword;
+  if (password) headers['X-Tooling-Password'] = password;
   let body;
   if (json !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(json); }
   if (raw) { headers['Content-Type'] = 'application/octet-stream'; body = raw; }
@@ -65,16 +66,28 @@ function render() {
 
 let adminPasswordResolve = null;
 let adminPasswordPromise = null;
-function askToolingPassword() {
+function askAdminPassword() {
   if (adminPasswordPromise) return adminPasswordPromise;
   adminPasswordPromise = new Promise((resolve) => {
     adminPasswordResolve = resolve;
-    modal(`<h3>Admin jenis tooling</h3><p class="sub">Masukkan password admin untuk menambah atau mengubah jenis tooling.</p>
+    modal(`<h3>Password admin</h3><p class="sub">Masukkan password admin untuk membuka Data & Import.</p>
       <label>Password admin<input id="admin-pw" type="password" autocomplete="current-password"></label>
       <div class="actions"><button class="btn" data-act="cancelAdminPassword">Batal</button><button class="btn primary" data-act="confirmAdminPassword">Lanjutkan</button></div>`);
     $('#admin-pw').focus();
   });
   return adminPasswordPromise;
+}
+async function authorizeAdmin() {
+  const password = await askAdminPassword();
+  if (!password) return false;
+  try {
+    await api('/api/admin/verify', { method: 'POST', adminPassword: password });
+    S.adminPassword = password;
+    return true;
+  } catch (e) {
+    toast(e.message, true);
+    return false;
+  }
 }
 function finishAdminPassword(password) {
   if (!adminPasswordResolve) return;
@@ -146,6 +159,7 @@ function mvText(m) {
   if (A === 'TERIMA') return [`Diterima ${m.qty} set`, `masuk stok ${L(m.to_location_id)}`, '✅'];
   if (A.startsWith('REQUEST_')) return [`Request → ${RQ_LABEL[A.slice(8)] || A.slice(8)}`, `${m.qty} set`, '🔔'];
   if (A === 'IMPORT') return ['Import Excel', `${m.qty} set`, '📥'];
+  if (A === 'HAPUS_JENIS') return ['Jenis tooling dihapus', m.note || '', '🗑️'];
   if (A === 'HAPUS_STYLE') return ['Style dihapus', m.note || '', '🗑️'];
   return [A, '', '•'];
 }
@@ -269,6 +283,7 @@ function vData() {
     <div class="grid2" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:10px"><label>Style baru<input id="ns" placeholder="mis. U740"></label><button class="btn" data-act="addMaster" data-k="styles" data-i="ns">Tambah</button></div>
     <div class="grid2" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:10px"><label>Gedung / lokasi baru<input id="nl" placeholder="mis. Gedung J"></label><button class="btn" data-act="addMaster" data-k="locations" data-i="nl">Tambah</button></div>
     <div class="grid2" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:10px"><label>Jenis tooling baru<input id="nt" placeholder="mis. Heat Press Die"></label><button class="btn" data-act="addMaster" data-k="types" data-i="nt">Tambah</button></div>
+    <div class="grid2" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:10px"><label>Hapus jenis tooling<select id="dt">${d.types.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label><button class="btn danger" data-act="delType">Hapus jenis</button></div>
     <div class="grid2" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end"><label>Hapus style<select id="ds">${d.styles.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label><button class="btn danger" data-act="delStyle">Hapus</button></div>
    </div>
   </div>`;
@@ -363,7 +378,11 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.act, D = el.dataset;
   const ids = () => ({ sid: +D.s, tid: +D.t, lid: +D.l });
   switch (a) {
-    case 'nav': S.view = D.v; location.hash = D.v; render(); window.scrollTo(0, 0); break;
+    case 'nav': {
+      if (D.v === 'data' && !S.adminPassword && !(await authorizeAdmin())) break;
+      if (S.view === 'data' && D.v !== 'data') S.adminPassword = null;
+      S.view = D.v; location.hash = D.v; render(); window.scrollTo(0, 0); break;
+    }
     case 'close': closeModal(); break;
     case 'cell': stockModal({ ...ids(), lock: true }); break;
     case 'addfor': stockModal({ sid: +D.s }); break;
@@ -403,18 +422,32 @@ document.addEventListener('click', async (e) => {
       if (!S.actor.trim()) return toast('Isi dulu nama PIC yang mengunggah di bagian bawah menu samping.', true);
       if (!requested_by) return toast('Nama PIC yang meminta import wajib diisi.', true);
       const newTypes = p.types.some((name) => !S.d.types.some((type) => type.name.toLowerCase() === name.toLowerCase()));
-      const adminPassword = newTypes ? await askToolingPassword() : null;
-      if (newTypes && !adminPassword) break;
-      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace, filename: p.filename, requested_by }, adminPassword }), `Import selesai: ${p.summary.totalSet} set`);
-      if (ok) { S.preview = null; S.view = 'dashboard'; location.hash = 'dashboard'; render(); }
+      if (newTypes && !S.adminPassword && !(await authorizeAdmin())) break;
+      const ok = await act(() => api('/api/import/commit', { method: 'POST', json: { styles: p.styles, types: p.types, locations: p.locations, items: p.items, replace, filename: p.filename, requested_by } }), `Import selesai: ${p.summary.totalSet} set`);
+      if (ok) { S.preview = null; S.adminPassword = null; S.view = 'dashboard'; location.hash = 'dashboard'; render(); }
       break;
     }
     case 'addMaster': {
       const v = $('#' + D.i).value;
       if (!v.trim()) return;
-      const adminPassword = D.k === 'types' ? await askToolingPassword() : null;
-      if (D.k === 'types' && !adminPassword) break;
-      const ok = await act(() => api('/api/' + D.k, { method: 'POST', json: { name: v }, adminPassword }), 'Ditambahkan');
+      const ok = await act(() => api('/api/' + D.k, { method: 'POST', json: { name: v } }), 'Ditambahkan');
+      if (ok) render();
+      break;
+    }
+    case 'delType': {
+      const select = $('#dt');
+      if (!select.value) return toast('Pilih jenis tooling yang akan dihapus.', true);
+      const typeId = +select.value;
+      const typeName = select.options[select.selectedIndex].text;
+      const stockRows = S.d.stock.filter((x) => x.type_id === typeId);
+      const stockSets = sum(stockRows);
+      const requests = S.d.requests.filter((x) => x.type_id === typeId);
+      const detail = `${stockSets} set stok di ${stockRows.length} baris dan ${requests.length} request`;
+      const question = stockRows.length || requests.length
+        ? `Jenis "${typeName}" masih digunakan (${detail}). Hapus jenis ini beserta semua stok dan request terkait? Riwayat aktivitas tetap disimpan.`
+        : `Hapus jenis "${typeName}"?`;
+      if (!confirm(question)) break;
+      const ok = await act(() => api('/api/types/' + typeId, { method: 'DELETE' }), 'Jenis tooling dihapus');
       if (ok) render();
       break;
     }
@@ -472,14 +505,31 @@ async function tryLogin() {
 }
 $('#pw-go').addEventListener('click', tryLogin);
 $('#pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
-window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (NAV.some(([k]) => k === v) && v !== S.view) { S.view = v; render(); } });
+window.addEventListener('hashchange', async () => {
+  const v = location.hash.slice(1);
+  if (!NAV.some(([k]) => k === v) || v === S.view) return;
+  if (v === 'data' && !S.adminPassword && !(await authorizeAdmin())) {
+    S.view = 'dashboard';
+    location.hash = 'dashboard';
+    render();
+    return;
+  }
+  if (S.view === 'data' && v !== 'data') S.adminPassword = null;
+  S.view = v;
+  render();
+});
 
 (async function start() {
   $('#actor').value = S.actor;
-  const h = location.hash.slice(1); if (NAV.some(([k]) => k === h)) S.view = h;
+  const h = location.hash.slice(1);
+  if (NAV.some(([k]) => k === h) && h !== 'data') S.view = h;
   try {
     const a = await fetch('/api/auth').then((r) => r.json());
     if (!a.ok) return showLogin();
     await load();
+    if (h === 'data') {
+      if (await authorizeAdmin()) { S.view = 'data'; render(); }
+      else { S.view = 'dashboard'; location.hash = 'dashboard'; render(); }
+    }
   } catch (e) { toast('Tidak bisa terhubung ke server', true); }
 })();
