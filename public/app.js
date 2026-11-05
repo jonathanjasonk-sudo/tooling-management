@@ -87,12 +87,20 @@ function finishAdminPassword(password) {
 
 function vDashboard() {
   const d = S.d, act_ = active(d.stock), total = sum(act_);
+  const bySt = d.statuses.map((s) => ({ ...s, n: sum(d.stock.filter((x) => x.status === s.key)) }));
   const attention = d.stock.filter((x) => ['MAINTENANCE', 'INCOMPLETE', 'RUSAK'].includes(x.status));
   const reqSets = sum(d.openReq);
   const summaryCards = (items) => items.map((i) => `<div class="summary-card"><b>${esc(i.name)}</b><strong>${i.val}</strong><small>set aktif</small></div>`).join('') || '<div class="empty">Belum ada data</div>';
   const byLoc = d.locations.map((l) => ({ name: l.name, val: sum(act_.filter((x) => x.location_id === l.id)) }));
   const byType = d.types.map((t) => ({ name: t.name, val: sum(act_.filter((x) => x.type_id === t.id)) }));
   const byStyle = d.styles.map((s) => ({ name: s.name, val: sum(act_.filter((x) => x.style_id === s.id)) }));
+  let acc = 0;
+  const totalByStatus = sum(bySt, (x) => x.n) || 1;
+  const statusGradient = bySt.filter((s) => s.n).map((s) => {
+    const start = acc;
+    acc += (s.n / totalByStatus) * 100;
+    return `${s.color} ${start}% ${acc}%`;
+  }).join(',') || '#e5e9f2 0 100%';
   if (!d.stock.length && !d.requests.length) {
     return `<div class="head"><div><h1>Selamat datang 👋</h1><p>Data tooling masih kosong. Mulai dengan mengunggah file Excel yang dipakai sekarang.</p></div></div>
       <div class="card" style="text-align:center;padding:50px"><div style="font-size:44px">📦</div><h3 style="justify-content:center">Belum ada data tooling</h3>
@@ -107,6 +115,11 @@ function vDashboard() {
     <div class="card kpi"><div class="ic" style="background:#dcfce7">✅</div><div><b>${sum(d.stock.filter((x) => x.status === 'TERSEDIA'))}</b><span>Tersedia</span><small>${sum(d.stock.filter((x) => x.status === 'DIPAKAI'))} sedang dipakai</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#fef3c7">🛠️</div><div><b>${sum(attention)}</b><span>Perlu perhatian</span><small>maintenance / kurang komponen / rusak</small></div></div>
     <div class="card kpi"><div class="ic" style="background:#e0f2fe">🚚</div><div><b>${reqSets}</b><span>Sedang on request (set)</span><small>${d.openReq.length} permintaan berjalan</small></div></div>
+  </div>
+  <div class="card dashboard-section"><h3>Status Tooling</h3><p class="chart-note">Jumlah set menurut status, termasuk yang rusak.</p>
+    <div class="donut-wrap"><div class="donut" style="background:conic-gradient(${statusGradient})" data-c="${sum(bySt, (x) => x.n)}"></div>
+      <div class="legend">${bySt.map((s) => `<div><i style="background:${s.color}"></i>${esc(s.label)}<em>${s.n}</em></div>`).join('')}</div>
+    </div>
   </div>
   <div class="card dashboard-section"><h3>Gedung</h3><div class="summary-grid">${summaryCards(byLoc)}</div>  </div>
   <div class="card dashboard-section"><h3>Jenis Tooling</h3><div class="summary-grid">${summaryCards(byType)}</div></div>
