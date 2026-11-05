@@ -19,7 +19,7 @@ npm install
 cp .env.example .env      # opsional
 npm start                 # buka http://localhost:3000
 ```
-Tanpa `DATABASE_URL`, data disimpan di folder `.data/` (database lokal). Di Railway otomatis memakai PostgreSQL.
+Tanpa `DATABASE_URL`, data disimpan di folder `.data/` (database lokal). Railway wajib memakai PostgreSQL; aplikasi akan menolak start jika `DATABASE_URL` belum diatur agar tidak menyimpan data ke disk sementara.
 
 ## Push ke GitHub
 ```bash
@@ -31,14 +31,14 @@ git push -u origin main
 ## Deploy ke Railway
 1. Railway → **New Project** → **Deploy from GitHub repo** → pilih repo ini.
 2. Di project yang sama: **+ New** → **Database** → **Add PostgreSQL**.
-3. Buka service aplikasi → tab **Variables** → tambahkan:
-   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (reference ke service Postgres)
+3. Pastikan service PostgreSQL tetap ada di project. Buka service aplikasi → tab **Variables** → tambahkan:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (reference ke service PostgreSQL; sesuaikan `Postgres` dengan nama service database Anda)
    - `APP_PASSWORD` = password pilihan Anda
    - `SESSION_SECRET` = teks acak panjang
 4. Tab **Settings → Networking → Generate Domain** untuk mendapatkan alamat web.
 5. Buka alamat tersebut → login → menu **Data & Import** → unggah file Excel awal.
 
-Setiap `git push` ke branch `main` akan otomatis ter-deploy ulang. Data aman di PostgreSQL.
+Setiap `git push` ke branch `main` akan otomatis ter-deploy ulang. Selama `DATABASE_URL` menunjuk ke service PostgreSQL yang sama dan database tidak dihapus, deploy kode tidak menghapus data. Jangan hapus service PostgreSQL atau mengubah referensi database. Data yang sebelumnya tersimpan di database lokal Railway tidak otomatis dipindahkan ke PostgreSQL; export dan import datanya setelah PostgreSQL tersambung.
 
 ## Struktur
 ```

@@ -62,7 +62,7 @@ main{padding:28px 32px 60px;min-width:0}
 /* bars */
 .bar{display:grid;grid-template-columns:110px 1fr 64px;gap:10px;align-items:center;margin:9px 0;font-weight:600;font-size:13px}
 .bar .t{height:14px;border-radius:99px;background:#e2e8f0;overflow:hidden}
-.bar .t i{display:block;height:100%;border-radius:99px;background:var(--pri)}
+.bar .t i{display:block;height:100%;border-radius:99px;background:var(--bar-color,var(--pri))}
 .bar em{font-style:normal;text-align:right;white-space:nowrap;font-size:12px}
 .chart-note{margin:-8px 0 14px;color:var(--mut);font-size:12px}
 .donut-wrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap}

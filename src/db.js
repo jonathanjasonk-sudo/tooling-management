@@ -3,6 +3,9 @@ const fs = require('fs');
 const { DEFAULT_TYPES, DEFAULT_LOCATIONS } = require('./constants');
 
 const usePg = !!process.env.DATABASE_URL;
+if (process.env.RAILWAY_PROJECT_ID && !usePg) {
+  throw new Error('DATABASE_URL wajib diatur di Railway agar data tersimpan di PostgreSQL dan tidak hilang saat deploy.');
+}
 let pool, lite;
 
 const SCHEMA = `

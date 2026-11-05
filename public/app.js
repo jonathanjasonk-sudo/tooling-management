@@ -62,9 +62,10 @@ function render() {
   $('#main').innerHTML = v();
 }
 
-const bars = (items, max) => items.map((i) => {
+const BAR_COLORS = ['#4f46e5', '#0891b2', '#16a34a', '#d97706', '#db2777', '#7c3aed', '#2563eb', '#ea580c'];
+const bars = (items, max) => items.map((i, index) => {
   const width = max ? Math.max(3, (i.val / max) * 100) : 0;
-  return `<div class="bar"><span>${esc(i.name)}</span><div class="t"><i style="width:${width}%"></i></div><em>${i.val} set</em></div>`;
+  return `<div class="bar"><span>${esc(i.name)}</span><div class="t"><i style="width:${width}%;--bar-color:${BAR_COLORS[index % BAR_COLORS.length]}"></i></div><em>${i.val} set</em></div>`;
 }).join('') || '<div class="empty">Belum ada data</div>';
 
 function vDashboard() {
