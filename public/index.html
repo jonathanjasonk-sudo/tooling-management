@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tooling Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form class="login-card" onsubmit="return false">
+      <div class="logo big">T</div>
+      <h2>Tooling Manager</h2>
+      <p>Masukkan password untuk membuka dashboard.</p>
+      <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+      <button class="btn primary" id="pw-go">Masuk</button>
+      <small id="pw-err" class="err"></small>
+    </form>
+  </div>
+
+  <div class="app" id="app">
+    <aside class="side">
+      <div class="brand"><div class="logo">T</div><div><b>Tooling Manager</b><small>Produksi</small></div></div>
+      <nav id="nav"></nav>
+      <div class="side-foot">
+        <label>Nama operator
+          <input id="actor" placeholder="mis. Budi (WH)">
+        </label>
+        <small>Dicatat di Riwayat setiap ada perubahan.</small>
+      </div>
+    </aside>
+    <main id="main"></main>
+  </div>
+
+  <div id="modal"></div>
+  <div id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
