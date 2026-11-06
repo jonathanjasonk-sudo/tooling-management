@@ -147,6 +147,9 @@ table.plain tr:hover td{background:#fafbff}
 .srow{display:grid;grid-template-columns:150px 90px 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px dashed var(--line)}
 .srow span{display:flex;align-items:center;gap:8px;font-weight:600}
 .srow i{width:10px;height:10px;border-radius:50%}
+.set-notes{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.set-notes label{font-size:11px}
+.set-notes textarea{display:block;min-height:58px;resize:vertical;white-space:pre-wrap}
 .hint{background:#f8f9fe;border-radius:12px;padding:11px 13px;color:var(--mut);font-size:12.5px;margin-top:10px}
 @keyframes fade{from{opacity:0}}@keyframes pop{from{transform:translateY(10px) scale(.98);opacity:0}}
 
@@ -176,6 +179,6 @@ table.plain tr:hover td{background:#fafbff}
   .side-foot{display:none}
   main{padding:18px 14px 50px}
   .mdl .grid3,.mdl .grid2{grid-template-columns:1fr}
-  .srow{grid-template-columns:1fr 80px}.srow input:last-child{grid-column:1/-1}
+  .srow{grid-template-columns:1fr 80px}
   .bar{grid-template-columns:84px 1fr 60px}
 }

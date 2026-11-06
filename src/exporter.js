@@ -48,7 +48,9 @@ async function buildWorkbook(d) {
         cell.numFmt = '0" SET"';
         cell.alignment = { horizontal: 'center' };
         for (const x of rows) {
-          if (x.status !== 'TERSEDIA' || x.note) notes.push(`${l.name}: ${x.qty} ${statusLabel[x.status]}${x.note ? ' - ' + x.note : ''}`);
+          const setNotes = Array.isArray(x.set_notes) && x.set_notes.length ? x.set_notes : x.note ? [x.note] : [];
+          const note = setNotes.map((text, i) => text ? `Set ${i + 1}: ${text}` : '').filter(Boolean).join('; ');
+          if (x.status !== 'TERSEDIA' || note) notes.push(`${l.name}: ${x.qty} ${statusLabel[x.status]}${note ? ' - ' + note : ''}`);
         }
       });
       const first = ws.getCell(row, 4).address, last = ws.getCell(row, 3 + nLoc).address;
@@ -56,7 +58,9 @@ async function buildWorkbook(d) {
       tc.value = { formula: `SUM(${first}:${last})` }; tc.numFmt = '0" SET"'; tc.font = { ...font, bold: true }; tc.alignment = { horizontal: 'center' };
       const req = open.filter((x) => x.style_id === s.id && x.type_id === t.id).reduce((a, b) => a + b.qty, 0);
       const rc = ws.getCell(row, reqCol); if (req) rc.value = req; rc.numFmt = '0" SET"'; rc.alignment = { horizontal: 'center' };
-      ws.getCell(row, noteCol).value = notes.join('; ');
+      const noteCell = ws.getCell(row, noteCol);
+      noteCell.value = notes.join('; ');
+      noteCell.alignment = { vertical: 'top', wrapText: true };
       row++;
     });
   }

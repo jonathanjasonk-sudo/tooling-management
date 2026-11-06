@@ -140,7 +140,7 @@ function vDashboard() {
   <div class="grid g2">
     <div class="card"><h3>Perlu Perhatian <small>klik untuk mengelola</small></h3><div class="list">${attention.length ? attention.slice(0, 8).map((x) => {
       const st = d.stBy[x.status]; return `<div class="item click" data-act="cell" data-s="${x.style_id}" data-t="${x.type_id}" data-l="${x.location_id}">
-        <div class="dot" style="background:${st.color}22;color:${st.color}">●</div><div><b>${esc(nm(d.sBy, x.style_id))} · ${esc(nm(d.tBy, x.type_id))}</b><small>${esc(nm(d.lBy, x.location_id))}${x.note ? ' — ' + esc(x.note) : ''}</small></div>
+        <div class="dot" style="background:${st.color}22;color:${st.color}">●</div><div><b>${esc(nm(d.sBy, x.style_id))} · ${esc(nm(d.tBy, x.type_id))}</b><small style="white-space:pre-wrap">${esc(nm(d.lBy, x.location_id))}${x.note ? ' — ' + esc(x.note) : ''}</small></div>
         <div class="r"><span class="chip" style="--c:${st.color}">${x.qty} set ${st.label}</span></div></div>`; }).join('') : '<div class="empty">Semua tooling dalam kondisi baik 🎉</div>'}</div></div>
     <div class="card"><h3>Request Berjalan <small><a href="#request" data-act="nav" data-v="request" style="color:var(--pri)">lihat semua</a></small></h3><div class="list">${d.openReq.length ? d.openReq.slice(0, 6).map((r) => `
       <div class="item"><div class="dot">🚚</div><div><b>${esc(nm(d.sBy, r.style_id))} · ${esc(nm(d.tBy, r.type_id))}</b><small>${r.qty} set → ${esc(r.target_location_id ? nm(d.lBy, r.target_location_id) : 'gedung belum ditentukan')}${r.due_date ? ' · target ' + fmtDay(r.due_date) : ''}</small></div>
@@ -312,19 +312,33 @@ function stockModal({ sid, tid, lid, lock } = {}) {
   <div class="actions">${lock ? '<button class="btn sp" data-act="moveBtn">↔ Pindahkan ke gedung lain</button>' : ''}<button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveStock">Simpan</button></div>`);
   fillRows();
 }
+function setNotes(status) {
+  return [...document.querySelectorAll(`#set-notes-${status} textarea`)].map((el) => el.value);
+}
+function renderSetNotes(status, qty, initial = setNotes(status)) {
+  const wrap = $(`#set-notes-${status}`);
+  const count = Math.max(0, Math.floor(qty || 0));
+  wrap.innerHTML = Array.from({ length: count }, (_, i) =>
+    `<label>Catatan set ${i + 1}<textarea data-status="${status}" rows="2" placeholder="Catatan (opsional)">${esc(initial[i] || '')}</textarea></label>`).join('');
+}
 function fillRows() {
   const s = styleByName($('#m-style').value || ''), t = +$('#m-type').value, l = +$('#m-loc').value;
   const cur = s ? stockOf(s.id, t, l) : [];
   $('#m-rows').innerHTML = S.d.statuses.map((st) => {
     const r = cur.find((x) => x.status === st.key);
-    return `<div class="srow"><span><i style="background:${st.color}"></i>${st.label}</span><input type="number" min="0" id="q-${st.key}" value="${r ? r.qty : 0}"><input id="n-${st.key}" placeholder="Catatan (opsional)" value="${esc(r?.note || '')}"></div>`;
+    return `<div class="srow"><span><i style="background:${st.color}"></i>${st.label}</span><input type="number" min="0" id="q-${st.key}" value="${r ? r.qty : 0}"><div class="set-notes" id="set-notes-${st.key}"></div></div>`;
   }).join('');
+  S.d.statuses.forEach((st) => {
+    const r = cur.find((x) => x.status === st.key);
+    const notes = Array.isArray(r?.set_notes) && r.set_notes.length ? r.set_notes : r?.note ? [r.note] : [];
+    renderSetNotes(st.key, r?.qty || 0, notes);
+  });
 }
 async function saveStock() {
   const name = $('#m-style').value.trim().toUpperCase();
   if (!name) return toast('Style wajib diisi', true);
   const t = +$('#m-type').value, l = +$('#m-loc').value;
-  const rows = S.d.statuses.map((st) => ({ status: st.key, qty: +$('#q-' + st.key).value || 0, note: $('#n-' + st.key).value }));
+  const rows = S.d.statuses.map((st) => ({ status: st.key, qty: +$('#q-' + st.key).value || 0, set_notes: setNotes(st.key) }));
   const style = styleByName(name);
   const current = style ? stockOf(style.id, t, l) : [];
   const addsStock = rows.some((r) => r.qty > (current.find((x) => x.status === r.status)?.qty || 0));
@@ -476,6 +490,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('input', (e) => {
   if (e.target.id === 'f-q') { S.f.q = e.target.value; $('#mx').innerHTML = matrixTable(); }
   if (e.target.id === 'actor') { S.actor = e.target.value; localStorage.setItem('actor', S.actor); }
+  if (e.target.id.startsWith('q-')) renderSetNotes(e.target.id.slice(2), +e.target.value);
 });
 document.addEventListener('change', (e) => {
   const id = e.target.id;

@@ -59,13 +59,19 @@ const qtyOf = (v) => { const n = parseInt(v, 10); if (!Number.isFinite(n) || n <
 const checkStatus = (s) => { if (!STATUSES.some((x) => x.key === s)) throw bad('Status tidak dikenal: ' + s); return s; };
 const actorOf = (req) => { try { return decodeURIComponent(req.get('x-actor') || '').slice(0, 60) || null; } catch { return null; } };
 const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+const noteText = (s) => String(s ?? '').replace(/\r\n?/g, '\n').trim();
+const setNotesOf = (stock) => Array.isArray(stock?.set_notes) && stock.set_notes.length
+  ? stock.set_notes.map(noteText)
+  : stock?.note ? [noteText(stock.note)] : [];
+const fitSetNotes = (notes, qty) => Array.from({ length: qty }, (_, i) => notes[i] || '');
+const summarySetNotes = (notes) => notes.map((note, i) => note ? `Set ${i + 1}: ${note}` : '').filter(Boolean).join('\n') || null;
 
 async function loadAll() {
   const [styles, types, locations, stock, requests, movements, imports] = await Promise.all([
     db.q('SELECT id,name FROM styles ORDER BY sort,id'),
     db.q('SELECT id,name FROM tooling_types ORDER BY sort,id'),
     db.q('SELECT id,name FROM locations ORDER BY sort,id'),
-    db.q('SELECT id,style_id,type_id,location_id,status,qty,note FROM stock'),
+    db.q('SELECT id,style_id,type_id,location_id,status,qty,note,set_notes FROM stock'),
     db.q(`SELECT id,style_id,type_id,qty,target_location_id,requested_by,to_char(due_date,'YYYY-MM-DD') AS due_date,status,note,created_at FROM requests ORDER BY id DESC`),
     db.q('SELECT id,ts,action,style_id,type_id,from_location_id,to_location_id,qty,from_status,to_status,note,actor FROM movements ORDER BY id DESC LIMIT 300'),
     db.q('SELECT id,ts,filename,requested_by,actor,replace_stock,item_count,total_qty,details FROM import_batches ORDER BY id DESC LIMIT 100'),
@@ -78,15 +84,21 @@ const log = (q, m) => q(
   [m.action, m.style_id ?? null, m.type_id ?? null, m.from ?? null, m.to ?? null, m.qty ?? null, m.fromStatus ?? null, m.toStatus ?? null, m.note ?? null, m.actor ?? null]);
 
 // tambah (delta) ke baris stok; hapus bila jadi 0
-async function addStock(q, { style_id, type_id, location_id, status, delta, note }) {
-  const cur = await q('SELECT id,qty FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
+async function addStock(q, { style_id, type_id, location_id, status, delta, set_notes, append_notes }) {
+  const cur = await q('SELECT id,qty,note,set_notes FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
   const old = cur.rows[0]?.qty || 0;
   const now = old + delta;
   if (now < 0) throw bad('Jumlah tidak mencukupi');
   if (now === 0) { if (cur.rows[0]) await q('DELETE FROM stock WHERE id=$1', [cur.rows[0].id]); return; }
-  await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note) VALUES($1,$2,$3,$4,$5,$6)
-           ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, updated_at=now()`,
-    [style_id, type_id, location_id, status, now, note || null]);
+  const oldNotes = fitSetNotes(cur.rows[0] ? setNotesOf(cur.rows[0]) : [], old);
+  const nextNotes = set_notes
+    ? fitSetNotes(set_notes, now)
+    : append_notes ? [...oldNotes, ...fitSetNotes(append_notes, delta)]
+    : delta < 0 ? oldNotes.slice(0, now) : [...oldNotes, ...Array(delta).fill('')];
+  const note = summarySetNotes(nextNotes);
+  await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note,set_notes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
+           ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, set_notes=$7::jsonb, updated_at=now()`,
+    [style_id, type_id, location_id, status, now, note, JSON.stringify(nextNotes)]);
 }
 
 /* ---------- Data utama ---------- */
@@ -106,20 +118,27 @@ app.post('/api/stock/bulk', async (req, res) => {
     for (const r of rows) {
       const status = checkStatus(r.status);
       qtyOf(r.qty);
-      const cur = await q('SELECT id,qty,note FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
+      const cur = await q('SELECT id,qty,note,set_notes FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, location_id, status]);
       currentRows.push(cur.rows[0]);
     }
     const addsStock = rows.some((r, i) => qtyOf(r.qty) > (currentRows[i]?.qty || 0));
     if (addsStock && !actor) throw bad('Nama PIC yang menambahkan wajib diisi.');
     if (addsStock && !requestedBy) throw bad('Nama PIC yang meminta wajib diisi.');
     for (const [i, r] of rows.entries()) {
-      const status = checkStatus(r.status), qty = qtyOf(r.qty), note = norm(r.note) || null;
+      const status = checkStatus(r.status), qty = qtyOf(r.qty);
       const cur = currentRows[i];
       const old = cur?.qty || 0;
+      if (r.set_notes !== undefined && !Array.isArray(r.set_notes)) throw bad('Catatan per set tidak valid.');
+      if (Array.isArray(r.set_notes) && r.set_notes.some((note) => note != null && typeof note !== 'string')) throw bad('Catatan per set tidak valid.');
+      const suppliedNotes = r.set_notes !== undefined
+        ? r.set_notes.map(noteText)
+        : r.note !== undefined ? [noteText(r.note)] : setNotesOf(cur);
+      const notes = fitSetNotes(suppliedNotes, qty);
+      const note = summarySetNotes(notes);
       if (qty === 0) { if (cur) await q('DELETE FROM stock WHERE id=$1', [cur.id]); }
-      else await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note) VALUES($1,$2,$3,$4,$5,$6)
-                    ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, updated_at=now()`,
-        [style_id, type_id, location_id, status, qty, note]);
+      else await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note,set_notes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
+                    ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, set_notes=$7::jsonb, updated_at=now()`,
+        [style_id, type_id, location_id, status, qty, note, JSON.stringify(notes)]);
       if (qty !== old) await log(q, { action: 'ATUR', style_id, type_id, to: location_id, qty: qty - old, toStatus: status, note: qty > old && requestedBy ? `Diminta oleh ${requestedBy}${note ? ` — ${note}` : ''}` : note, actor });
       else if ((cur?.note || null) !== note && qty > 0) await log(q, { action: 'CATATAN', style_id, type_id, to: location_id, qty: 0, toStatus: status, note, actor });
     }
@@ -138,8 +157,12 @@ app.post('/api/stock/move', async (req, res) => {
   if (from === to && status === toStatus) throw bad('Gedung asal dan tujuan sama');
   const actor = actorOf(req);
   await db.tx(async (q) => {
-    await addStock(q, { style_id, type_id, location_id: from, status, delta: -qty });
-    await addStock(q, { style_id, type_id, location_id: to, status: toStatus, delta: qty });
+    const source = await q('SELECT qty,note,set_notes FROM stock WHERE style_id=$1 AND type_id=$2 AND location_id=$3 AND status=$4', [style_id, type_id, from, status]);
+    if (!source.rows[0] || source.rows[0].qty < qty) throw bad('Jumlah tidak mencukupi');
+    const sourceNotes = fitSetNotes(setNotesOf(source.rows[0]), source.rows[0].qty);
+    const movedNotes = sourceNotes.splice(0, qty);
+    await addStock(q, { style_id, type_id, location_id: from, status, delta: -qty, set_notes: sourceNotes });
+    await addStock(q, { style_id, type_id, location_id: to, status: toStatus, delta: qty, append_notes: movedNotes });
     await log(q, { action: 'PINDAH', style_id, type_id, from, to, qty, fromStatus: status, toStatus, note: norm(b.note) || null, actor });
   });
   res.json({ ok: true });
@@ -318,8 +341,8 @@ app.post('/api/import/commit', requireToolingPassword, async (req, res) => {
       if (qty < 1) continue;
       const s = ids.styles[it.style], t = ids.types[it.type], l = ids.locations[it.location];
       if (!s || !t || !l) throw bad('Data import tidak lengkap: ' + JSON.stringify(it));
-      await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note) VALUES($1,$2,$3,$4,$5,$6)
-               ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, updated_at=now()`,
+      await q(`INSERT INTO stock(style_id,type_id,location_id,status,qty,note,set_notes) VALUES($1,$2,$3,$4,$5,$6,'[]'::jsonb)
+               ON CONFLICT (style_id,type_id,location_id,status) DO UPDATE SET qty=$5, note=$6, set_notes='[]'::jsonb, updated_at=now()`,
         [s, t, l, status, qty, norm(it.note) || null]);
       total += qty;
       details.push({ style: it.style, type: it.type, location: it.location, status, qty, note: norm(it.note) || '' });

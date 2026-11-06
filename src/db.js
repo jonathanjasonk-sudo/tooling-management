@@ -23,8 +23,10 @@ CREATE TABLE IF NOT EXISTS stock (
   status TEXT NOT NULL DEFAULT 'TERSEDIA',
   qty INT NOT NULL CHECK (qty >= 0),
   note TEXT,
+  set_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (style_id, type_id, location_id, status));
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS set_notes JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE TABLE IF NOT EXISTS requests (
   id SERIAL PRIMARY KEY,
   style_id INT NOT NULL REFERENCES styles(id) ON DELETE CASCADE,
