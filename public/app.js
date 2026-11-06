@@ -306,7 +306,7 @@ function stockModal({ sid, tid, lid, lock } = {}) {
     <label>Gedung<select id="m-loc" ${lock ? 'disabled' : ''}>${opts(d.locations, lid || d.locations[0]?.id)}</select></label>
   </div><datalist id="dl-s">${d.styles.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>
   <div id="m-rows"></div>
-  <label>PIC yang meminta penambahan<input id="m-requested-by" placeholder="Nama PIC peminta"></label>
+  <label>PIC yang meminta penambahan<input id="m-requested-by" placeholder="Nama PIC peminta" value="${esc(S.actor)}"></label>
   <p class="chart-note">PIC yang menambahkan diambil dari nama PIC di bagian bawah menu samping.</p>
   <div class="hint">Contoh: ada 5 set di gedung ini, 2 di antaranya sedang diperbaiki → <b>Tersedia 3</b> dan <b>Maintenance 2</b>. Catatan boleh diisi (mis. “kurang size 2,3,9”).</div>
   <div class="actions">${lock ? '<button class="btn sp" data-act="moveBtn">↔ Pindahkan ke gedung lain</button>' : ''}<button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveStock">Simpan</button></div>`);
