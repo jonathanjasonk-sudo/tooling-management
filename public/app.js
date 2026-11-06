@@ -156,6 +156,7 @@ function mvText(m) {
   if (A === 'ATUR') return [`${m.qty > 0 ? '+' : ''}${m.qty} set ${st(m.to_status)}`, `di ${L(m.to_location_id)}`, '✏️'];
   if (A === 'CATATAN') return ['Catatan diperbarui', `di ${L(m.to_location_id)}`, '📝'];
   if (A === 'REQUEST') return [`Request baru ${m.qty} set`, m.to_location_id ? `tujuan ${L(m.to_location_id)}` : '', '🚚'];
+  if (A === 'REQUEST_REVISI') return ['Data request direvisi', m.note || '', '✏️'];
   if (A === 'TERIMA') return [`Diterima ${m.qty} set`, `masuk stok ${L(m.to_location_id)}`, '✅'];
   if (A.startsWith('REQUEST_')) return [`Request → ${RQ_LABEL[A.slice(8)] || A.slice(8)}`, `${m.qty} set`, '🔔'];
   if (A === 'IMPORT') return ['Import Excel', `${m.qty} set`, '📥'];
@@ -230,7 +231,7 @@ function vRequest() {
   const btns = (r) => {
     const b = [];
     if (r.status === 'DIAJUKAN') b.push(`<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="DIPROSES">Mulai dibuat</button>`);
-    if (r.status === 'DIPROSES') b.push(`<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="SIAP">Tandai siap</button>`);
+    if (r.status === 'DIPROSES') b.push(`<button class="btn sm" data-act="editReq" data-id="${r.id}">Revisi data</button>`, `<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="SIAP">Tandai siap</button>`);
     if (OPEN.includes(r.status)) b.push(`<button class="btn sm ok" data-act="rqRecv" data-id="${r.id}">Terima ke stok</button>`, `<button class="btn sm danger" data-act="rqs" data-id="${r.id}" data-st="DIBATALKAN">Batal</button>`);
     if (r.status === 'DIBATALKAN') b.push(`<button class="btn sm danger" data-act="rqDel" data-id="${r.id}">Hapus</button>`);
     return b.join(' ');
@@ -349,16 +350,16 @@ function moveModal({ sid, tid, lid }) {
   <div class="actions"><button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="doMove" data-s="${sid}" data-t="${tid}" data-l="${lid}">Pindahkan</button></div>`);
 }
 function reqModal(pre = {}) {
-  const d = S.d;
-  modal(`<h3>On Request Tooling</h3><p class="sub">Catat tooling yang diminta/akan dibuat. Setelah diterima, otomatis masuk stok gedung tujuan.</p>
-  <div class="grid2"><label>Style<input id="r-style" list="dl-s2" placeholder="Pilih / ketik style baru" value="${pre.sid ? esc(nm(d.sBy, pre.sid)) : ''}"></label>
-  <label>Jenis tooling<select id="r-type">${opts(d.types, '')}</select></label></div><datalist id="dl-s2">${d.styles.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>
-  <div class="grid3"><label>Jumlah (set)<input type="number" id="r-qty" min="1" value="1"></label>
-  <label>Gedung tujuan<select id="r-loc"><option value="">Belum ditentukan</option>${opts(d.locations, '')}</select></label>
-  <label>Target tanggal<input type="date" id="r-due"></label></div>
-  <div class="grid2"><label>PIC yang meminta<input id="r-by" placeholder="Nama PIC peminta"></label><label>Catatan<input id="r-note" placeholder="opsional"></label></div>
-  <p class="chart-note">PIC yang mencatat request diambil dari nama PIC di bagian bawah menu samping.</p>
-  <div class="actions"><button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveReq">Ajukan Request</button></div>`);
+  const d = S.d, r = pre.request;
+  modal(`<h3>${r ? 'Revisi Request Tooling' : 'On Request Tooling'}</h3><p class="sub">${r ? 'Perbarui data request yang sedang dalam pembuatan.' : 'Catat tooling yang diminta/akan dibuat. Setelah diterima, otomatis masuk stok gedung tujuan.'}</p>
+  <div class="grid2"><label>Style<input id="r-style" list="dl-s2" placeholder="Pilih / ketik style baru" value="${esc(r ? nm(d.sBy, r.style_id) : pre.sid ? nm(d.sBy, pre.sid) : '')}"></label>
+  <label>Jenis tooling<select id="r-type">${opts(d.types, r?.type_id)}</select></label></div><datalist id="dl-s2">${d.styles.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>
+  <div class="grid3"><label>Jumlah (set)<input type="number" id="r-qty" min="1" value="${r ? r.qty : 1}"></label>
+  <label>Gedung tujuan<select id="r-loc"><option value="">Belum ditentukan</option>${opts(d.locations, r?.target_location_id)}</select></label>
+  <label>Target tanggal<input type="date" id="r-due" value="${esc(r?.due_date || '')}"></label></div>
+  <div class="grid2"><label>PIC yang meminta<input id="r-by" placeholder="Nama PIC peminta" value="${esc(r ? r.requested_by : S.actor)}"></label><label>Catatan<input id="r-note" placeholder="opsional" value="${esc(r?.note || '')}"></label></div>
+  <p class="chart-note">PIC peminta otomatis mengikuti nama PIC di bagian bawah menu samping.</p>
+  <div class="actions"><button class="btn" data-act="close">Batal</button><button class="btn primary" data-act="saveReq" ${r ? `data-id="${r.id}"` : ''}>${r ? 'Simpan Revisi' : 'Ajukan Request'}</button></div>`);
 }
 function recvModal(id) {
   const r = S.d.requests.find((x) => x.id === id); const d = S.d;
@@ -394,12 +395,21 @@ document.addEventListener('click', async (e) => {
       if (ok) closeModal(); break;
     }
     case 'newReq': reqModal(); break;
+    case 'editReq': {
+      const request = S.d.requests.find((r) => r.id === +D.id);
+      if (request?.status === 'DIPROSES') reqModal({ request });
+      break;
+    }
     case 'saveReq': {
       const name = $('#r-style').value.trim().toUpperCase(); if (!name) return toast('Style wajib diisi', true);
       if (!S.actor.trim()) return toast('Isi dulu nama PIC yang mencatat di bagian bawah menu samping.', true);
       if (!$('#r-by').value.trim()) return toast('Nama PIC yang meminta wajib diisi.', true);
       const s = styleByName(name);
-      const ok = await act(() => api('/api/requests', { method: 'POST', json: { style_id: s ? s.id : null, style_name: name, type_id: +$('#r-type').value, qty: +$('#r-qty').value, target_location_id: $('#r-loc').value || null, due_date: $('#r-due').value || null, requested_by: $('#r-by').value, note: $('#r-note').value } }), 'Request dicatat');
+      const editing = !!D.id;
+      const ok = await act(() => api(editing ? '/api/requests/' + D.id : '/api/requests', {
+        method: editing ? 'PUT' : 'POST',
+        json: { style_id: s ? s.id : null, style_name: name, type_id: +$('#r-type').value, qty: +$('#r-qty').value, target_location_id: $('#r-loc').value || null, due_date: $('#r-due').value || null, requested_by: $('#r-by').value, note: $('#r-note').value },
+      }), editing ? 'Data request diperbarui' : 'Request dicatat');
       if (ok) { closeModal(); }
       break;
     }

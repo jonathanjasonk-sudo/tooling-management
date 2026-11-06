@@ -145,11 +145,11 @@ app.post('/api/stock/move', async (req, res) => {
 });
 
 /* ---------- Master data ---------- */
-async function addMaster(table, name, fmt) {
+async function addMaster(table, name, fmt, q = db.q) {
   const n = fmt(norm(name));
   if (!n) throw bad('Nama wajib diisi');
-  const mx = await db.q(`SELECT COALESCE(MAX(sort),0)+1 AS s FROM ${table}`);
-  const r = await db.q(`INSERT INTO ${table}(name,sort) VALUES($1,$2) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id,name`, [n, mx.rows[0].s]);
+  const mx = await q(`SELECT COALESCE(MAX(sort),0)+1 AS s FROM ${table}`);
+  const r = await q(`INSERT INTO ${table}(name,sort) VALUES($1,$2) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id,name`, [n, mx.rows[0].s]);
   return r.rows[0];
 }
 const title = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
@@ -227,6 +227,46 @@ app.patch('/api/requests/:id', async (req, res) => {
       await log(q, { action: 'REQUEST_' + status, style_id: cur.style_id, type_id: cur.type_id, to: target, qty: cur.qty, note: 'Request #' + id, actor });
     }
     await q('UPDATE requests SET status=$1, target_location_id=$2, updated_at=now() WHERE id=$3', [status, target, id]);
+  });
+  res.json({ ok: true });
+});
+
+app.put('/api/requests/:id', async (req, res) => {
+  const id = int(req.params.id, 'id');
+  const b = req.body;
+  const type_id = int(b.type_id, 'jenis tooling');
+  const qty = int(b.qty, 'jumlah');
+  if (qty < 1) throw bad('Jumlah minimal 1');
+  const requestedBy = norm(b.requested_by);
+  if (!requestedBy) throw bad('Nama PIC yang meminta wajib diisi.');
+  const dueDate = norm(b.due_date) || null;
+  if (dueDate) {
+    const parsedDate = new Date(`${dueDate}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dueDate) {
+      throw bad('Target tanggal tidak valid.');
+    }
+  }
+  const target = b.target_location_id ? int(b.target_location_id, 'gedung') : null;
+  const actor = actorOf(req);
+  await db.tx(async (q) => {
+    const cur = (await q('SELECT * FROM requests WHERE id=$1', [id])).rows[0];
+    if (!cur) throw bad('Request tidak ditemukan', 404);
+    if (cur.status !== 'DIPROSES') throw bad('Hanya request dalam pembuatan yang dapat direvisi.');
+
+    let style_id = b.style_id ? int(b.style_id, 'style') : null;
+    if (!style_id) {
+      if (!norm(b.style_name)) throw bad('Style wajib diisi');
+      style_id = (await addMaster('styles', b.style_name, (s) => s.toUpperCase(), q)).id;
+    }
+    if (!(await q('SELECT id FROM tooling_types WHERE id=$1', [type_id])).rows[0]) throw bad('Jenis tooling tidak ditemukan.');
+    if (target && !(await q('SELECT id FROM locations WHERE id=$1', [target])).rows[0]) throw bad('Gedung tujuan tidak ditemukan.');
+
+    await q(`UPDATE requests SET style_id=$1,type_id=$2,qty=$3,target_location_id=$4,requested_by=$5,due_date=$6,note=$7,updated_at=now() WHERE id=$8`,
+      [style_id, type_id, qty, target, requestedBy, dueDate, norm(b.note) || null, id]);
+    await log(q, {
+      action: 'REQUEST_REVISI', style_id, type_id, to: target, qty,
+      note: `Request #${id} diperbarui`, actor,
+    });
   });
   res.json({ ok: true });
 });

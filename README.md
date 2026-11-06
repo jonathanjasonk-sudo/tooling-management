@@ -8,7 +8,7 @@ dan melihat total per style beserta pembagiannya per gedung — menggantikan fil
 - **Dashboard**: total set, sebaran per gedung, status, tooling perlu perhatian, request berjalan, aktivitas terbaru.
 - **Matriks Tooling**: tampilan seperti Excel (style × jenis × gedung). Klik angka untuk ubah jumlah/status/catatan atau **pindahkan** ke gedung lain.
 - **Status per tooling**: Tersedia, Sedang Dipakai, Maintenance, Kurang Komponen, Rusak.
-- **On Request**: ajukan → dalam pembuatan → siap → *terima ke stok* (otomatis masuk stok). Jumlah request ikut dihitung sebagai proyeksi total style.
+- **On Request**: ajukan → dalam pembuatan → siap → *terima ke stok* (otomatis masuk stok). PIC peminta otomatis mengikuti nama PIC di menu samping; request dalam pembuatan dapat direvisi. Jumlah request ikut dihitung sebagai proyeksi total style.
 - **Riwayat**: perubahan dengan nama PIC, request, penambahan stok manual, dan detail baris pada impor Excel.
 - Penambahan stok dan request mencatat PIC peminta serta PIC yang menambahkan/mencatat. Riwayat import Excel menyimpan rincian setiap baris.
 - Tab **Data & Import** dan perubahan master data memerlukan password admin. Menghapus jenis tooling akan meminta konfirmasi; stok dan request yang terkait ikut dihapus, sedangkan riwayat aktivitas tetap tersimpan.
