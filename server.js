@@ -7,6 +7,7 @@ const { parseWorkbook } = require('./src/importer');
 const { buildWorkbook } = require('./src/exporter');
 
 const app = express();
+const OPEN_REQUEST_STATUSES = ['DIAJUKAN', 'DIPROSES', 'SIAP'];
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
 
@@ -251,7 +252,7 @@ app.put('/api/requests/:id', async (req, res) => {
   await db.tx(async (q) => {
     const cur = (await q('SELECT * FROM requests WHERE id=$1', [id])).rows[0];
     if (!cur) throw bad('Request tidak ditemukan', 404);
-    if (cur.status !== 'DIPROSES') throw bad('Hanya request dalam pembuatan yang dapat direvisi.');
+    if (!OPEN_REQUEST_STATUSES.includes(cur.status)) throw bad('Hanya request yang masih berjalan yang dapat direvisi.');
 
     let style_id = b.style_id ? int(b.style_id, 'style') : null;
     if (!style_id) {

@@ -230,8 +230,9 @@ function vRequest() {
   const list = d.requests.filter((r) => (S.rq === 'open' ? OPEN.includes(r.status) : S.rq === 'done' ? !OPEN.includes(r.status) : true));
   const btns = (r) => {
     const b = [];
+    if (OPEN.includes(r.status)) b.push(`<button class="btn sm" data-act="editReq" data-id="${r.id}">Revisi data</button>`);
     if (r.status === 'DIAJUKAN') b.push(`<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="DIPROSES">Mulai dibuat</button>`);
-    if (r.status === 'DIPROSES') b.push(`<button class="btn sm" data-act="editReq" data-id="${r.id}">Revisi data</button>`, `<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="SIAP">Tandai siap</button>`);
+    if (r.status === 'DIPROSES') b.push(`<button class="btn sm" data-act="rqs" data-id="${r.id}" data-st="SIAP">Tandai siap</button>`);
     if (OPEN.includes(r.status)) b.push(`<button class="btn sm ok" data-act="rqRecv" data-id="${r.id}">Terima ke stok</button>`, `<button class="btn sm danger" data-act="rqs" data-id="${r.id}" data-st="DIBATALKAN">Batal</button>`);
     if (r.status === 'DIBATALKAN') b.push(`<button class="btn sm danger" data-act="rqDel" data-id="${r.id}">Hapus</button>`);
     return b.join(' ');
@@ -397,7 +398,7 @@ document.addEventListener('click', async (e) => {
     case 'newReq': reqModal(); break;
     case 'editReq': {
       const request = S.d.requests.find((r) => r.id === +D.id);
-      if (request?.status === 'DIPROSES') reqModal({ request });
+      if (request && OPEN.includes(request.status)) reqModal({ request });
       break;
     }
     case 'saveReq': {
